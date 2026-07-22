@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "timeUnit": "ms",
+  "segments": [
+    { "startMs": 500, "endMs": 2400 },
+    { "startMs": 3100, "endMs": 5700 }
+  ]
+}

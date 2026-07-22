@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "spanish-initial-v1",
+  "language": "es",
+  "consentConfirmed": false,
+  "items": [
+    {
+      "id": "reading-01",
+      "category": "reading",
+      "referenceFile": "references/reading-01.txt",
+      "vadReferenceFile": "vad-references/reading-01.json",
+      "durationMs": 0,
+      "notes": "Lectura autorizada; reemplazar duración al registrar."
+    },
+    {
+      "id": "conversation-01",
+      "category": "conversation",
+      "referenceFile": "references/conversation-01.txt",
+      "vadReferenceFile": "vad-references/conversation-01.json",
+      "durationMs": 0,
+      "notes": "Conversación espontánea autorizada."
+    },
+    {
+      "id": "noise-01",
+      "category": "noise",
+      "referenceFile": "references/noise-01.txt",
+      "vadReferenceFile": "vad-references/noise-01.json",
+      "durationMs": 0,
+      "notes": "Habla con ruido del ambiente objetivo."
+    },
+    {
+      "id": "silence-01",
+      "category": "silence",
+      "referenceFile": "references/silence-01.txt",
+      "vadReferenceFile": "vad-references/silence-01.json",
+      "durationMs": 0,
+      "notes": "Referencia vacía; cualquier texto cuenta como alucinación."
+    }
+  ]
+}

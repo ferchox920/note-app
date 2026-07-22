@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+**/build/
+/build/
+.externalNativeBuild/
+.cxx/
+captures/
+/tmp/
+/models/*.bin
+/artifacts/private/
+/corpus/private/
+__pycache__/
+*.jks
+*.keystore

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recording_channel_name">Grabación activa</string>
+    <string name="recording_notification_title">Note App está grabando</string>
+    <string name="recording_preparing">Preparando el micrófono…</string>
+    <string name="recording_active">Grabación en curso</string>
+    <string name="recording_paused">Grabación pausada</string>
+    <string name="recording_action_pause">Pausar</string>
+    <string name="recording_action_resume">Reanudar</string>
+    <string name="recording_action_finish">Finalizar</string>
+</resources>
+

@@ -1,0 +1,49 @@
+package com.noteapp.asr
+
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Test
+
+class IncrementalAsrCoordinatorTest {
+    @Test
+    fun `emits a partial then finalizes the segment without blocking capture input`() = runBlocking {
+        var calls = 0
+        val coordinator = IncrementalAsrCoordinator(
+            scope = this,
+            sampleRateHz = 10,
+            transcriber = IncrementalPcmTranscriber { _, _ ->
+                calls++
+                IncrementalInferenceResult(
+                    text = if (calls == 1) "hola cómo" else "hola cómo estás",
+                    inferenceDurationMs = 20,
+                    realTimeFactor = 0.1,
+                )
+            },
+        )
+
+        coordinator.onPcm16(pcm(2), speechActive = false, endpointDetected = false, streamEndMs = 200)
+        coordinator.onPcm16(pcm(30), speechActive = true, endpointDetected = false, streamEndMs = 3_200)
+        val partial = withTimeout(2_000) { coordinator.state.first { it.partialCount == 1 } }
+
+        assertEquals("hola cómo", partial.unstableText)
+        assertNotNull(partial.timeToFirstTextMs)
+
+        coordinator.endSegment(streamEndMs = 3_200)
+        val final = withTimeout(2_000) { coordinator.state.first { it.finalizedSegments.size == 1 } }
+
+        assertEquals("hola cómo estás", final.stableText)
+        assertEquals("", final.unstableText)
+        assertEquals(0, final.queueDepth)
+        assertEquals(2, final.inferenceMetrics.size)
+        assertEquals(false, final.inferenceMetrics.first().final)
+        assertEquals(true, final.inferenceMetrics.last().final)
+        coordinator.shutdown(drain = true)
+    }
+
+    private fun pcm(samples: Int): ByteArray = ByteArray(samples * 2) { index ->
+        if (index % 2 == 0) (index / 2).toByte() else 0
+    }
+}
