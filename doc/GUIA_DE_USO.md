@@ -20,20 +20,24 @@ borren sus datos.
 
 ## Instalar o actualizar la APK
 
+La variante funcional que debe usarse durante G1 es `benchmark`: conserva símbolos
+de depuración y acceso `run-as`, pero enlaza las bibliotecas nativas optimizadas.
 Desde la raíz del proyecto:
 
 ```powershell
-.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:assembleBenchmark
 $adb = 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe'
-& $adb -s R5CY20HYBGJ install -r .\app\build\outputs\apk\debug\app-debug.apk
+& $adb -s R5CY20HYBGJ install -r .\app\build\outputs\apk\benchmark\app-benchmark.apk
 & $adb -s R5CY20HYBGJ shell am start -n com.noteapp/.MainActivity
 ```
 
 `install -r` conserva los datos y modelos existentes. Una desinstalación completa
-elimina grabaciones y modelos privados.
+elimina grabaciones y modelos privados. Nunca actualizar mientras una sesión está
+en `RECORDING` o `PAUSED`: la instalación detiene el proceso y convierte la sesión
+en una prueba de recuperación.
 
-Para mediciones ASR no usar `assembleDebug`. Preparar e instalar la variante
-optimizada con:
+`assembleDebug` queda reservado para desarrollo rápido de UI; no sirve para medir
+ASR. Para preparar además corpus/modelos y barridos optimizados de G0:
 
 ```powershell
 .\tools\prepare-g0-benchmark.ps1 `
@@ -49,9 +53,14 @@ optimizada con:
 2. Tocar **Iniciar 16 kHz**. La ruta 48→16 kHz sigue siendo comparativa y aún no
    es la ruta recomendada.
 3. Conceder micrófono y notificaciones si Android los solicita.
-4. Usar **Pausar**, **Reanudar** y finalmente **Finalizar**.
+4. Usar **Pausar**, **Reanudar** y finalmente **Finalizar**; confirmar el cierre
+   en el diálogo. **Continuar grabando** descarta el cierre accidental.
 5. Comprobar que el estado sea `COMPLETED`, con cero errores de lectura y cero
    discontinuidades.
+
+Si Android interrumpe el micrófono, la app debe mostrar una sesión en
+`Sesiones interrumpidas`. Tocar **Reanudar …** continúa en un segmento nuevo sin
+sobrescribir el audio anterior.
 
 ## Transcribir una sesión finalizada
 
@@ -80,4 +89,6 @@ Para preparar la APK y comprobar que no haya una grabación incompleta anterior:
 Después seguir los tres casos de
 [`evidence/sprint-1/g1-device-gate-protocol.md`](evidence/sprint-1/g1-device-gate-protocol.md).
 La prueba principal usa **Sin ASR en vivo**, **Iniciar 16 kHz** y al menos 90
-minutos de audio útil con la pantalla apagada.
+minutos de audio útil con la pantalla apagada. Durante una ejecución activa basta
+dejar el teléfono conectado; no se debe reinstalar, forzar cierre ni inyectar las
+teclas de encendido/suspensión mediante ADB.
