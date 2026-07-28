@@ -75,6 +75,22 @@ SHA-256, y continuar con el siguiente número de segmento.
 
 ## Caso C: interrupción por llamada
 
+Iniciar una sesión nueva y luego ejecutar el observador:
+
+```powershell
+$adb = 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+.\tools\run-g1-call-case.ps1 `
+  -Adb $adb `
+  -Serial R5CY20HYBGJ `
+  -SessionId <sessionId> `
+  -Execute
+```
+
+El arnés no inicia llamadas, no lee números y no captura audio telefónico. Tras
+60 s imprime `CALL_WINDOW_READY`; desde otro teléfono se debe llamar, atender
+15–30 s y colgar. Si la app queda en `RECOVERING`, abre Note App y espera hasta
+cinco minutos a que el usuario desbloquee, revise el motivo y toque **Reanudar**.
+
 1. Iniciar una sesión nueva, apagar la pantalla y grabar al menos 60 segundos.
 2. Recibir una llamada de prueba, atender durante 15–30 segundos y finalizarla.
 3. Registrar el estado observado: continuidad automática, error recuperable o
