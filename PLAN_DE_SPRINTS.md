@@ -127,6 +127,14 @@ offline con la validación incremental G2. Evidencia:
 
 **Meta:** establecer la arquitectura mínima y grabar 90 minutos de forma estable, incluso con pantalla apagada.
 
+**Estado al 2026-07-28: EN VALIDACIÓN FÍSICA.** La implementación ya contiene
+foreground service de micrófono, estados de sesión, pausa/reanudación, checkpoint
+atómico cada 10 s, segmentos PCM con SHA-256, recuperación de segmento huérfano y
+métricas de lectura/discontinuidad. G1 se valida con tres casos separados: 90 min
+con pantalla apagada, cierre forzado recuperable e interrupción por llamada.
+Protocolo:
+[`doc/evidence/sprint-1/g1-device-gate-protocol.md`](doc/evidence/sprint-1/g1-device-gate-protocol.md).
+
 **Backlog prioritario**
 
 - P0. Configurar módulos iniciales: `app`, `core-domain`, `core-audio`, `core-storage`, `feature-recording`, `benchmark` y `shared-testing`.

@@ -16,6 +16,9 @@ La implementación sigue [PLAN_DE_SPRINTS.md](PLAN_DE_SPRINTS.md), con
   [`doc/evidence/spike/g0-device-run-optimized-2026-07-28.md`](doc/evidence/spike/g0-device-run-optimized-2026-07-28.md).
 - El protocolo reproducible de la build optimizada está en
   [`doc/evidence/spike/g0-optimized-benchmark-protocol.md`](doc/evidence/spike/g0-optimized-benchmark-protocol.md).
+- La siguiente puerta activa es G1. Su matriz física de 90 minutos, recuperación
+  y llamada está en
+  [`doc/evidence/sprint-1/g1-device-gate-protocol.md`](doc/evidence/sprint-1/g1-device-gate-protocol.md).
 
 ## Requisitos
 

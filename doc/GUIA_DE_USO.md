@@ -64,3 +64,20 @@ tardó 32/41 minutos. La variante `benchmark` optimizada procesó el mismo audio
 
 La grabación y las transcripciones son privadas. No compartir el contenido de
 `artifacts/private/` sin consentimiento explícito.
+
+## Ejecutar la puerta G1
+
+Para preparar la APK y comprobar que no haya una grabación incompleta anterior:
+
+```powershell
+.\tools\prepare-g1-device-test.ps1 `
+  -Adb 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe' `
+  -Serial R5CY20HYBGJ `
+  -Install `
+  -Launch
+```
+
+Después seguir los tres casos de
+[`evidence/sprint-1/g1-device-gate-protocol.md`](evidence/sprint-1/g1-device-gate-protocol.md).
+La prueba principal usa **Sin ASR en vivo**, **Iniciar 16 kHz** y al menos 90
+minutos de audio útil con la pantalla apagada.
