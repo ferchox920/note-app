@@ -33,6 +33,7 @@ class IncrementalTranscriptStore {
                 inferenceDurationMs = item.getLong("inferenceDurationMs"),
                 visibleLatencyMs = item.getLong("visibleLatencyMs"),
                 realTimeFactor = item.getDouble("realTimeFactor"),
+                reusedResult = item.optBoolean("reusedResult", false),
             )
         }
         return IncrementalAsrState(
@@ -79,11 +80,12 @@ class IncrementalTranscriptStore {
                     put("inferenceDurationMs", metric.inferenceDurationMs)
                     put("visibleLatencyMs", metric.visibleLatencyMs)
                     put("realTimeFactor", metric.realTimeFactor)
+                    put("reusedResult", metric.reusedResult)
                 })
             }
         }
         val json = JSONObject().apply {
-            put("schemaVersion", 1)
+            put("schemaVersion", 2)
             put("modelId", modelId)
             put("capturePipelineId", capturePipelineId)
             put("language", "es")

@@ -200,6 +200,14 @@ Auditoría de preparación:
 
 **Meta:** mostrar texto útil durante la grabación sin tartamudeos, repeticiones ni reescrituras excesivas.
 
+**Optimización iniciada el 2026-07-28.** El evaluador ahora calcula RTF sobre
+cobertura temporal única, sin contar dos veces ventanas solapadas. El coordinador
+reutiliza una hipótesis parcial únicamente cuando la ventana final es exactamente
+la misma y el pre-roll usa un ring buffer primitivo sin boxing por muestra. Las
+pruebas deterministas pasan; falta benchmark físico incremental antes de elegir
+tiny/base o evaluar G2. Evidencia:
+[`doc/evidence/sprint-3/incremental-optimization-2026-07-28.md`](doc/evidence/sprint-3/incremental-optimization-2026-07-28.md).
+
 **Backlog prioritario**
 
 - P0. Implementar ring buffer PCM y ventanas de trabajo.

@@ -38,6 +38,7 @@ data class IncrementalInferenceMetric(
     val inferenceDurationMs: Long,
     val visibleLatencyMs: Long,
     val realTimeFactor: Double,
+    val reusedResult: Boolean = false,
 )
 
 data class IncrementalAsrState(
@@ -69,6 +70,38 @@ internal data class QueueOfferResult(
     val accepted: Boolean,
     val droppedPartials: Int,
 )
+
+internal class RecentPcmSamples(private val capacity: Int) {
+    private val values = ShortArray(capacity)
+    private var writeIndex = 0
+    private var size = 0
+
+    init {
+        require(capacity > 0)
+    }
+
+    fun append(samples: ShortArray) {
+        samples.forEach { sample ->
+            values[writeIndex] = sample
+            writeIndex = (writeIndex + 1) % capacity
+            if (size < capacity) size++
+        }
+    }
+
+    fun snapshot(): ShortArray {
+        val result = ShortArray(size)
+        val oldestIndex = if (size == capacity) writeIndex else 0
+        repeat(size) { index ->
+            result[index] = values[(oldestIndex + index) % capacity]
+        }
+        return result
+    }
+
+    fun clear() {
+        writeIndex = 0
+        size = 0
+    }
+}
 
 /** Bounded queue that sacrifices stale partials but never silently evicts a final task. */
 internal class FinalAwareInferenceQueue(private val capacity: Int = 2) {
@@ -141,6 +174,7 @@ class IncrementalAsrCoordinator(
     private var accepting = true
     private var segmentActive = false
     private var segmentStartMs = 0L
+    private var cachedPartial: CachedPartial? = null
 
     /** Called on the capture thread after VAD processed the same normalized PCM. */
     fun onPcm16(
@@ -235,13 +269,22 @@ class IncrementalAsrCoordinator(
             while (true) {
                 val task = queue.poll() ?: break
                 mutableState.update { it.copy(running = true, queueDepth = queue.size()) }
+                val cached = cachedPartial?.takeIf { it.matches(task) }
                 runCatching {
-                    val pcm = encodeLittleEndian(task.window.samples)
-                    val offsetMs = segmentStartMs(task)
-                    transcriber.transcribe(pcm, offsetMs)
+                    cached?.result ?: run {
+                        val pcm = encodeLittleEndian(task.window.samples)
+                        val offsetMs = segmentStartMs(task)
+                        transcriber.transcribe(pcm, offsetMs)
+                    }
                 }.onSuccess { result ->
-                    applyResult(task, result)
+                    if (task.final) {
+                        cachedPartial = null
+                    } else {
+                        cachedPartial = CachedPartial.from(task, result)
+                    }
+                    applyResult(task, result, reusedResult = cached != null)
                 }.onFailure { failure ->
+                    if (task.final) cachedPartial = null
                     mutableState.update {
                         it.copy(errorCode = failure.message ?: ERROR_INFERENCE_FAILED)
                     }
@@ -251,7 +294,11 @@ class IncrementalAsrCoordinator(
         }
     }
 
-    private fun applyResult(task: IncrementalInferenceTask, result: IncrementalInferenceResult) {
+    private fun applyResult(
+        task: IncrementalInferenceTask,
+        result: IncrementalInferenceResult,
+        reusedResult: Boolean,
+    ) {
         val transcript = if (task.final) {
             reconciler.finalizeSegment(result.text)
         } else {
@@ -282,9 +329,10 @@ class IncrementalAsrCoordinator(
                 windowEndMs = windowStartMs + audioDurationMs,
                 final = task.final,
                 audioDurationMs = audioDurationMs,
-                inferenceDurationMs = result.inferenceDurationMs,
+                inferenceDurationMs = if (reusedResult) 0L else result.inferenceDurationMs,
                 visibleLatencyMs = visibleLatencyMs,
-                realTimeFactor = result.realTimeFactor,
+                realTimeFactor = if (reusedResult) 0.0 else result.realTimeFactor,
+                reusedResult = reusedResult,
             )
             current.copy(
                 stableText = stable,
@@ -322,21 +370,32 @@ class IncrementalAsrCoordinator(
         }
     }
 
-    private class RecentPcmSamples(private val capacity: Int) {
-        private val values = ArrayDeque<Short>(capacity)
+    private data class CachedPartial(
+        val segmentStartMs: Long,
+        val windowStartSample: Long,
+        val windowEndSample: Long,
+        val samples: ShortArray,
+        val result: IncrementalInferenceResult,
+    ) {
+        fun matches(task: IncrementalInferenceTask): Boolean =
+            task.final &&
+                segmentStartMs == task.segmentStartMs &&
+                windowStartSample == task.window.startSample &&
+                windowEndSample == task.window.endSample &&
+                samples.contentEquals(task.window.samples)
 
-        fun append(samples: ShortArray) {
-            samples.forEach { sample ->
-                if (values.size == capacity) values.removeFirst()
-                values.addLast(sample)
-            }
+        companion object {
+            fun from(
+                task: IncrementalInferenceTask,
+                result: IncrementalInferenceResult,
+            ) = CachedPartial(
+                segmentStartMs = task.segmentStartMs,
+                windowStartSample = task.window.startSample,
+                windowEndSample = task.window.endSample,
+                samples = task.window.samples,
+                result = result,
+            )
         }
-
-        fun snapshot(): ShortArray = ShortArray(values.size).also { result ->
-            values.forEachIndexed { index, sample -> result[index] = sample }
-        }
-
-        fun clear() = values.clear()
     }
 
     private companion object {

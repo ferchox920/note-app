@@ -14,6 +14,9 @@ reemplaza G0/G1 en el dispositivo objetivo.
 - Estabilización: confirmar palabras compartidas por dos hipótesis consecutivas y
   conservar al menos una palabra como cola provisional.
 - Cierre: refinamiento final al endpoint VAD o al límite de duración del segmento.
+- Si la ventana final coincide exactamente con la última parcial, reutilizar la
+  hipótesis determinista y registrar `reusedResult=true`; cualquier audio nuevo
+  obliga a ejecutar el refinamiento.
 
 ## Estado implementado
 
@@ -43,7 +46,9 @@ solamente en la cola provisional. También cubren prioridad de finales, overflow
 explícito, ciclo parcial→final y persistencia del modelo elegido en el checkpoint.
 
 Cada inferencia persiste inicio/fin de ventana, tipo parcial/final, duración de audio,
-tiempo de inferencia, latencia visible y RTF. Después de copiar exclusivamente los
+tiempo de inferencia, latencia visible, RTF y si reutilizó un resultado idéntico.
+El RTF sostenido se calcula contra la unión temporal de las ventanas, no contra la
+suma que contaría el overlap varias veces. Después de copiar exclusivamente los
 JSON autorizados a un directorio privado, generar percentiles con:
 
 ```powershell

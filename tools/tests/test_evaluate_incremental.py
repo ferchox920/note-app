@@ -11,6 +11,7 @@ sys.modules[SPEC.name] = MODULE
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
 aggregate_sessions = MODULE.aggregate_sessions
+covered_audio_duration_ms = MODULE.covered_audio_duration_ms
 percentile = MODULE.percentile
 summarize_session = MODULE.summarize_session
 
@@ -30,8 +31,14 @@ class EvaluateIncrementalTest(unittest.TestCase):
                 "stableConflictCount": 0,
                 "errorCode": None,
                 "inferenceMetrics": [
-                    {"final": False, "audioDurationMs": 4_000, "inferenceDurationMs": 2_000, "visibleLatencyMs": 2_100},
-                    {"final": True, "audioDurationMs": 4_000, "inferenceDurationMs": 3_000, "visibleLatencyMs": 3_100},
+                    {
+                        "final": False, "windowStartMs": 0, "windowEndMs": 4_000,
+                        "audioDurationMs": 4_000, "inferenceDurationMs": 2_000, "visibleLatencyMs": 2_100,
+                    },
+                    {
+                        "final": True, "windowStartMs": 4_000, "windowEndMs": 8_000,
+                        "audioDurationMs": 4_000, "inferenceDurationMs": 3_000, "visibleLatencyMs": 3_100,
+                    },
                 ],
             },
             "session.json",
@@ -40,6 +47,34 @@ class EvaluateIncrementalTest(unittest.TestCase):
         self.assertTrue(summary["eligibleForManualG2Review"])
         self.assertEqual(0.625, summary["weightedRealTimeFactor"])
         self.assertEqual(1, summary["droppedPartialCount"])
+        self.assertEqual(8_000, summary["coveredAudioDurationMs"])
+        self.assertEqual(0, summary["reusedResultCount"])
+
+    def test_overlapping_windows_count_unique_audio_once(self):
+        metrics = [
+            {
+                "final": False, "windowStartMs": 0, "windowEndMs": 4_000,
+                "audioDurationMs": 4_000, "inferenceDurationMs": 2_000, "visibleLatencyMs": 2_100,
+            },
+            {
+                "final": True, "windowStartMs": 0, "windowEndMs": 4_000,
+                "audioDurationMs": 4_000, "inferenceDurationMs": 3_000, "visibleLatencyMs": 3_100,
+            },
+        ]
+
+        self.assertEqual(4_000, covered_audio_duration_ms(metrics))
+        summary = summarize_session({
+            "modelId": "base",
+            "capturePipelineId": "direct-16k",
+            "timeToFirstTextMs": 3_500,
+            "errorCode": None,
+            "inferenceMetrics": metrics,
+        })
+
+        self.assertEqual(8_000, summary["windowAudioDurationMs"])
+        self.assertEqual(4_000, summary["coveredAudioDurationMs"])
+        self.assertEqual(1.25, summary["weightedRealTimeFactor"])
+        self.assertFalse(summary["eligibleForManualG2Review"])
 
     def test_aggregate_uses_worst_session_for_g2_risk(self):
         rows = [

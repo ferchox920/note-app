@@ -25,6 +25,29 @@ def percentile(values: list[float], probability: float) -> float | None:
     return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
 
 
+def covered_audio_duration_ms(metrics: list[dict]) -> int:
+    """Return unique timeline coverage so overlapping windows are not double-counted."""
+    if not metrics:
+        return 0
+    if not all("windowStartMs" in item and "windowEndMs" in item for item in metrics):
+        return sum(int(item["audioDurationMs"]) for item in metrics)
+    intervals = sorted(
+        (int(item["windowStartMs"]), int(item["windowEndMs"]))
+        for item in metrics
+    )
+    if any(start < 0 or end <= start for start, end in intervals):
+        raise ValueError("Incremental inference metrics contain an invalid window interval")
+    covered = 0
+    current_start, current_end = intervals[0]
+    for start, end in intervals[1:]:
+        if start <= current_end:
+            current_end = max(current_end, end)
+        else:
+            covered += current_end - current_start
+            current_start, current_end = start, end
+    return covered + current_end - current_start
+
+
 def summarize_session(data: dict, source: str = "") -> dict[str, object]:
     metrics = data.get("inferenceMetrics", [])
     if not metrics:
@@ -32,11 +55,12 @@ def summarize_session(data: dict, source: str = "") -> dict[str, object]:
     partials = [item for item in metrics if not item["final"]]
     visible = [float(item["visibleLatencyMs"]) for item in partials]
     inference = [float(item["inferenceDurationMs"]) for item in metrics]
-    audio_ms = sum(int(item["audioDurationMs"]) for item in metrics)
+    window_audio_ms = sum(int(item["audioDurationMs"]) for item in metrics)
+    covered_audio_ms = covered_audio_duration_ms(metrics)
     inference_ms = sum(int(item["inferenceDurationMs"]) for item in metrics)
     first_text = data.get("timeToFirstTextMs")
     p95_visible = percentile(visible, 0.95)
-    weighted_rtf = inference_ms / audio_ms if audio_ms else math.inf
+    weighted_rtf = inference_ms / covered_audio_ms if covered_audio_ms else math.inf
     error_code = data.get("errorCode")
     automatic_thresholds = {
         "firstTextWithin4s": first_text is not None and int(first_text) <= 4_000,
@@ -56,6 +80,10 @@ def summarize_session(data: dict, source: str = "") -> dict[str, object]:
         "visibleLatencyP95Ms": p95_visible,
         "inferenceDurationP50Ms": percentile(inference, 0.50),
         "inferenceDurationP95Ms": percentile(inference, 0.95),
+        "windowAudioDurationMs": window_audio_ms,
+        "coveredAudioDurationMs": covered_audio_ms,
+        "totalInferenceDurationMs": inference_ms,
+        "reusedResultCount": sum(1 for item in metrics if item.get("reusedResult") is True),
         "weightedRealTimeFactor": weighted_rtf,
         "droppedPartialCount": int(data.get("droppedPartialCount", 0)),
         "stableConflictCount": int(data.get("stableConflictCount", 0)),
@@ -107,7 +135,7 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     report = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "note": "Automatic thresholds do not approve G2; manual duplication and capture-stability review remains required.",
         "configurations": aggregate_sessions(rows),
         "sessions": rows,

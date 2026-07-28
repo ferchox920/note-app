@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IncrementalAsrCoordinatorTest {
@@ -40,6 +41,42 @@ class IncrementalAsrCoordinatorTest {
         assertEquals(2, final.inferenceMetrics.size)
         assertEquals(false, final.inferenceMetrics.first().final)
         assertEquals(true, final.inferenceMetrics.last().final)
+        coordinator.shutdown(drain = true)
+    }
+
+    @Test
+    fun `reuses an exact partial window when finalizing without new audio`() = runBlocking {
+        var calls = 0
+        val coordinator = IncrementalAsrCoordinator(
+            scope = this,
+            sampleRateHz = 10,
+            transcriber = IncrementalPcmTranscriber { _, _ ->
+                calls++
+                IncrementalInferenceResult(
+                    text = "hola mundo",
+                    inferenceDurationMs = 200,
+                    realTimeFactor = 0.2,
+                )
+            },
+        )
+
+        coordinator.onPcm16(
+            pcm16 = pcm(30),
+            speechActive = true,
+            endpointDetected = false,
+            streamEndMs = 3_000,
+        )
+        withTimeout(2_000) { coordinator.state.first { it.partialCount == 1 } }
+
+        coordinator.endSegment(streamEndMs = 3_000)
+        val final = withTimeout(2_000) { coordinator.state.first { it.finalizedSegments.size == 1 } }
+
+        assertEquals(1, calls)
+        assertEquals("hola mundo", final.stableText)
+        assertEquals(2, final.inferenceMetrics.size)
+        assertTrue(final.inferenceMetrics.last().reusedResult)
+        assertEquals(0L, final.inferenceMetrics.last().inferenceDurationMs)
+        assertEquals(0.0, final.inferenceMetrics.last().realTimeFactor, 0.0)
         coordinator.shutdown(drain = true)
     }
 
