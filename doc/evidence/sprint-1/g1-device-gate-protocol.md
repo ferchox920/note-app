@@ -115,6 +115,21 @@ sanitizado de G1 debe registrar:
 - diario técnico ordenado con origen `ui`, `notification`, `system` o `runtime`;
 - riesgos observados y decisión explícita `CONTINUAR`, `AJUSTAR` o `DETENER`.
 
+Para el caso A, combinar la verificación con el monitor y las acciones temporizadas:
+
+```powershell
+python .\tools\evaluate_g1_capture.py `
+  --verification <device-session>\verification.json `
+  --monitor-jsonl <monitor>\samples.jsonl `
+  --timed-actions-jsonl <monitor>\timed-actions.jsonl `
+  --output <monitor>\case-a-evaluation.json `
+  --fail-on-automatic-check
+```
+
+El evaluador exige 90 minutos útiles, 80 minutos observados con pantalla apagada,
+salud continua del proceso/servicio, pausa de 10 segundos entre los minutos 30–35,
+un minuto en segundo plano entre los minutos 60–65 y ausencia de errores del arnés.
+
 G1 solo se aprueba si el caso A cumple 90 minutos sin pérdida/corrupción, el caso B
 recupera sin sobrescritura y los tres casos dejan un resultado reproducible. Un
 fallo en llamada puede ser aceptable únicamente si se informa y permite recuperar
