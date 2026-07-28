@@ -30,8 +30,12 @@ function Invoke-AdbText {
     param([string[]]$CommandArguments)
     $prefix = @()
     if ($Serial) { $prefix += @("-s", $Serial) }
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     $result = & $Adb @prefix @CommandArguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorActionPreference
+    if ($exitCode -ne 0) {
         throw "ADB command failed: $($CommandArguments -join ' '): $($result -join [Environment]::NewLine)"
     }
     return ($result | Out-String).Trim()
