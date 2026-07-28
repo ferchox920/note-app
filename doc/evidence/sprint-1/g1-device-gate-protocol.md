@@ -55,8 +55,10 @@ APK y espacio libre. El audio y los checkpoints completos permanecen en
    comprobar que la notificación continúa y volver a apagar la pantalla.
 6. Al superar 90 minutos de audio útil, tocar **Finalizar** y confirmar en el
    diálogo. En una ejecución desatendida se permite `ACTION_COMPLETE` desde el
-   arnés después de comprobar el umbral, con origen inmutable `adb-harness`. El
-   diálogo sigue siendo obligatorio para el cierre desde UI y evita accidentes.
+   arnés únicamente después de comprobar tanto 5.400.000 ms útiles como
+   4.800.000 ms observados con pantalla apagada, con origen inmutable
+   `adb-harness`. El diálogo sigue siendo obligatorio para el cierre desde UI y
+   evita accidentes.
 7. Exigir estado `COMPLETED`, duración de al menos 5.400.000 ms, cero errores de
    lectura, cero discontinuidades y cero frames estimados perdidos.
 
