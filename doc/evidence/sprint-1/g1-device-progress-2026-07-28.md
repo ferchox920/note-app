@@ -103,6 +103,21 @@ en estado `IDLE`.
 La sesión se recolectó y verificó para demostrar que el timeout del arnés no deja
 el micrófono activo. **No cuenta como caso C**, porque no existió una llamada real.
 
+## Matriz automática con la evidencia actual
+
+Se ejecutó `tools/evaluate_g1_matrix.py` aun sabiendo que A y C estaban
+incompletos, para obtener un diagnóstico reproducible:
+
+- `caseALongCapturePassed`: `false`;
+- `caseBRecoveryPassed`: `true`;
+- `caseCCallInterruptionPassed`: `false`;
+- estado global: `AUTOMATIC_CHECKS_FAILED`;
+- `approved`: `false`.
+
+Los seis checks internos del caso B pasaron. En C solo se confirmó el modelo S25
+Ultra; fallaron correctamente llamada atendida real, resultado de la interrupción,
+audio posterior y cierre con el ciclo de vida exigido.
+
 ## Trabajo restante antes de cerrar G1
 
 1. Repetir el caso C cuando haya otro teléfono disponible, atender la llamada
