@@ -79,9 +79,17 @@ class EvaluateG1CaptureTest(unittest.TestCase):
             },
             {"action": "NINETY_MINUTES_READY", "durationMs": 5_400_000, "result": "RECORDING"},
         ]
+        self.notification = {
+            "notificationPresent": True,
+            "sessionStatus": "PAUSED",
+            "durationMs": 1_804_640,
+            "text": "Grabación pausada",
+            "resumeActionPresent": True,
+            "finishActionPresent": True,
+        }
 
     def test_accepts_complete_case_a_evidence(self):
-        report = evaluate(self.verification, self.samples, self.actions)
+        report = evaluate(self.verification, self.samples, self.actions, self.notification)
 
         self.assertTrue(report["automaticThresholdsMet"])
         self.assertEqual(5_400_000, report["metrics"]["screenOffObservedMs"])
@@ -90,12 +98,14 @@ class EvaluateG1CaptureTest(unittest.TestCase):
     def test_rejects_monitor_gap_and_runner_error(self):
         self.samples[45]["connected"] = False
         self.actions.append({"action": "RUNNER_ERROR", "durationMs": 0, "result": "adb failed"})
+        self.notification["resumeActionPresent"] = False
 
-        report = evaluate(self.verification, self.samples, self.actions)
+        report = evaluate(self.verification, self.samples, self.actions, self.notification)
 
         self.assertFalse(report["automaticThresholdsMet"])
         self.assertFalse(report["automaticChecks"]["monitorStayedHealthy"])
         self.assertFalse(report["automaticChecks"]["runnerReached90MinutesWithoutErrors"])
+        self.assertFalse(report["automaticChecks"]["pausedNotificationReflectedState"])
 
     def test_does_not_count_large_monitor_gaps(self):
         start = datetime(2026, 7, 28, tzinfo=timezone.utc)

@@ -124,13 +124,15 @@ python .\tools\evaluate_g1_capture.py `
   --verification <device-session>\verification.json `
   --monitor-jsonl <monitor>\samples.jsonl `
   --timed-actions-jsonl <monitor>\timed-actions.jsonl `
+  --notification-evidence <monitor>\pause-notification-sanitized.json `
   --output <monitor>\case-a-evaluation.json `
   --fail-on-automatic-check
 ```
 
 El evaluador exige 90 minutos útiles, 80 minutos observados con pantalla apagada,
 salud continua del proceso/servicio, pausa de 10 segundos entre los minutos 30–35,
-un minuto en segundo plano entre los minutos 60–65 y ausencia de errores del arnés.
+notificación pausada con acciones correctas, un minuto en segundo plano entre los
+minutos 60–65 y ausencia de errores del arnés.
 
 G1 solo se aprueba si el caso A cumple 90 minutos sin pérdida/corrupción, el caso B
 recupera sin sobrescritura y los tres casos dejan un resultado reproducible. Un

@@ -46,7 +46,12 @@ def first_action(actions: list[dict], name: str) -> dict | None:
     return next((action for action in actions if action.get("action") == name), None)
 
 
-def evaluate(verification: dict, monitor_samples: list[dict], timed_actions: list[dict]) -> dict:
+def evaluate(
+    verification: dict,
+    monitor_samples: list[dict],
+    timed_actions: list[dict],
+    notification_evidence: dict,
+) -> dict:
     lifecycle_names = set(verification.get("lifecycle", {}).get("eventNames", []))
     pcm = verification.get("pcm", {})
     vad = verification.get("vad", {})
@@ -100,6 +105,14 @@ def evaluate(verification: dict, monitor_samples: list[dict], timed_actions: lis
             and 30 * 60 * 1_000 <= int(pause.get("durationMs", -1)) <= 35 * 60 * 1_000
             and 10_000 <= pause_wall_ms <= 30_000
         ),
+        "pausedNotificationReflectedState": (
+            notification_evidence.get("notificationPresent") is True
+            and notification_evidence.get("sessionStatus") == "PAUSED"
+            and 30 * 60 * 1_000 <= int(notification_evidence.get("durationMs", -1)) <= 35 * 60 * 1_000
+            and notification_evidence.get("text") == "Grabación pausada"
+            and notification_evidence.get("resumeActionPresent") is True
+            and notification_evidence.get("finishActionPresent") is True
+        ),
         "backgroundBetween60And65Minutes": (
             background is not None
             and background_verified is not None
@@ -141,6 +154,7 @@ def main() -> int:
     parser.add_argument("--verification", required=True, type=Path)
     parser.add_argument("--monitor-jsonl", required=True, type=Path)
     parser.add_argument("--timed-actions-jsonl", required=True, type=Path)
+    parser.add_argument("--notification-evidence", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--fail-on-automatic-check", action="store_true")
     args = parser.parse_args()
@@ -149,6 +163,7 @@ def main() -> int:
         json.loads(args.verification.read_text(encoding="utf-8-sig")),
         read_jsonl(args.monitor_jsonl),
         read_jsonl(args.timed_actions_jsonl),
+        json.loads(args.notification_evidence.read_text(encoding="utf-8-sig")),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
