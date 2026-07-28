@@ -15,8 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -126,6 +128,30 @@ fun RecordingScreen(
     benchmarkChunkSeconds: Int,
     onSelectBenchmarkChunkSeconds: (Int) -> Unit,
 ) {
+    var confirmFinish by remember { mutableStateOf(false) }
+    if (confirmFinish && state.status != SessionStatus.RECORDING && state.status != SessionStatus.PAUSED) {
+        confirmFinish = false
+    }
+    if (confirmFinish) {
+        AlertDialog(
+            onDismissRequest = { confirmFinish = false },
+            title = { Text("¿Finalizar grabación?") },
+            text = { Text("La sesión se cerrará y ya no continuará capturando audio.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmFinish = false
+                    onIntent(RecordingIntent.Complete)
+                }) {
+                    Text("Finalizar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmFinish = false }) {
+                    Text("Continuar grabando")
+                }
+            },
+        )
+    }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -220,7 +246,7 @@ fun RecordingScreen(
                 else -> Unit
             }
             if (state.status == SessionStatus.RECORDING || state.status == SessionStatus.PAUSED) {
-                Button(onClick = { onIntent(RecordingIntent.Complete) }) {
+                Button(onClick = { confirmFinish = true }) {
                     Text("Finalizar")
                 }
             }

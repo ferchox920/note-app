@@ -136,6 +136,8 @@ sensible. G1 se valida con tres casos separados: 90 min
 con pantalla apagada, cierre forzado recuperable e interrupción por llamada.
 Protocolo:
 [`doc/evidence/sprint-1/g1-device-gate-protocol.md`](doc/evidence/sprint-1/g1-device-gate-protocol.md).
+Auditoría de preparación:
+[`doc/evidence/sprint-1/g1-readiness-audit-2026-07-28.md`](doc/evidence/sprint-1/g1-readiness-audit-2026-07-28.md).
 
 **Backlog prioritario**
 

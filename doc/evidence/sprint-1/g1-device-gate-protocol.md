@@ -43,12 +43,18 @@ APK y espacio libre. El audio y los checkpoints completos permanecen en
      -SessionId <sessionId>
    ```
 
-3. Apagar la pantalla durante al menos 80 de los 90 minutos.
-4. Entre los minutos 30 y 35, despertar el teléfono, pausar durante 10 segundos y
-   reanudar. Registrar las horas de ambas acciones y volver a apagar la pantalla.
+3. Dejar que la pantalla se apague por su timeout normal y mantenerla apagada
+   durante al menos 80 de los 90 minutos. No inyectar `KEYCODE_POWER`/`KEYCODE_SLEEP`
+   mediante ADB: en este S25 el evento sintético puede activar el botón Compose que
+   conserva el foco y no representa una interacción física válida.
+4. Entre los minutos 30 y 35, pausar durante 10 segundos y reanudar. Se puede usar
+   la notificación físicamente o el arnés ADB con origen `adb-harness`; registrar
+   las horas y el origen de ambas acciones. Si se despertó el teléfono físicamente,
+   dejar que vuelva a apagarse por timeout.
 5. Entre los minutos 60 y 65, abrir otra app durante un minuto sin cerrar Note App;
    comprobar que la notificación continúa y volver a apagar la pantalla.
-6. Al superar 90 minutos de audio útil, tocar **Finalizar**.
+6. Al superar 90 minutos de audio útil, tocar **Finalizar** y confirmar en el
+   diálogo. El paso de confirmación evita cierres accidentales.
 7. Exigir estado `COMPLETED`, duración de al menos 5.400.000 ms, cero errores de
    lectura, cero discontinuidades y cero frames estimados perdidos.
 
