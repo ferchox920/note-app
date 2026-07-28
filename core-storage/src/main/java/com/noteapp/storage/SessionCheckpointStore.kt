@@ -36,7 +36,7 @@ class FileSessionCheckpointStore(private val recordingsDirectory: java.io.File) 
             id = id,
             status = com.noteapp.domain.SessionStatus.RECOVERING,
             durationMs = numericField(json, "durationMs"),
-            errorCode = null,
+            errorCode = stringField(json, "errorCode"),
         )
     }.getOrNull()
 

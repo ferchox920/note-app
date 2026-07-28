@@ -261,9 +261,14 @@ fun RecordingScreen(
         if (state.status == SessionStatus.NEW && state.recoverableSessions.isNotEmpty()) {
             Text("Sesiones interrumpidas", modifier = Modifier.padding(top = 24.dp))
             state.recoverableSessions.forEach { session ->
+                Text(
+                    recoverableSessionMessage(session.errorCode),
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Button(
                     onClick = { onRecoverSession(session.id) },
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 ) {
                     Text("Reanudar ${session.id.take(8)} (${formatDuration(session.durationMs)})")
                 }

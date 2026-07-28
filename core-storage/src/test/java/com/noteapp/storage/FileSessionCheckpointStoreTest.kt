@@ -12,7 +12,7 @@ class FileSessionCheckpointStoreTest {
 
     @Test
     fun `finds interrupted recording but excludes terminal session`() = runBlocking {
-        writeCheckpoint("recover-me", "RECORDING", 12_345)
+        writeCheckpoint("recover-me", "RECOVERING", 12_345, "AUDIO_CLIENT_SILENCED")
         writeCheckpoint("done", "COMPLETED", 99_000)
 
         val result = FileSessionCheckpointStore(temporaryFolder.root).findRecoverable()
@@ -20,6 +20,7 @@ class FileSessionCheckpointStoreTest {
         assertEquals(1, result.size)
         assertEquals("recover-me", result.single().id)
         assertEquals(12_345, result.single().durationMs)
+        assertEquals("AUDIO_CLIENT_SILENCED", result.single().errorCode)
     }
 
     @Test
@@ -41,10 +42,16 @@ class FileSessionCheckpointStoreTest {
         assertEquals(99_000, result.single().durationMs)
     }
 
-    private fun writeCheckpoint(id: String, status: String, durationMs: Long) {
+    private fun writeCheckpoint(
+        id: String,
+        status: String,
+        durationMs: Long,
+        errorCode: String? = null,
+    ) {
         val directory = temporaryFolder.newFolder(id)
+        val errorJson = errorCode?.let { "\"$it\"" } ?: "null"
         directory.resolve("checkpoint.json").writeText(
-            """{"schemaVersion":1,"sessionId":"$id","status":"$status","durationMs":$durationMs}""",
+            """{"schemaVersion":1,"sessionId":"$id","status":"$status","durationMs":$durationMs,"errorCode":$errorJson}""",
         )
     }
 }
