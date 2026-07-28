@@ -14,12 +14,27 @@ segmentos existentes.
 
 ## Interrupción y recuperación
 
-1. Sin pausar ni finalizar, ejecutar:
+La ejecución recomendada usa el arnés, que exige confirmar el `sessionId` dos veces
+mediante el parámetro y el switch `-Execute` antes de realizar el cierre:
 
-   ```powershell
-   adb shell am force-stop com.noteapp
-   adb shell monkey -p com.noteapp 1
-   ```
+```powershell
+$adb = 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe'
+.\tools\run-g1-recovery-case.ps1 `
+  -Adb $adb `
+  -Serial R5CY20HYBGJ `
+  -SessionId <sessionId> `
+  -Execute
+```
+
+El arnés espera 60 s de audio, ejecuta `am force-stop`, extrae una copia privada de
+todos los segmentos en ese instante, abre la app y recupera con origen
+`adb-harness`. Luego graba otros 60 s, pausa 10 s, reanuda, finaliza, recolecta la
+sesión y compara longitud y SHA-256 de cada PCM anterior a la recuperación.
+
+La variante manual equivalente es:
+
+1. Sin pausar ni finalizar, ejecutar `adb shell am force-stop com.noteapp` y abrir
+   Note App desde el launcher.
 
 2. Confirmar que la pantalla muestra `Sesiones interrumpidas` y la duración del
    último checkpoint.
