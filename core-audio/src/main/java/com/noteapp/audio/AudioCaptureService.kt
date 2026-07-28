@@ -11,7 +11,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioRecordingConfiguration
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import android.os.Build
@@ -46,6 +48,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
 class AudioCaptureService : Service() {
@@ -411,14 +414,35 @@ class AudioCaptureService : Service() {
             } else {
                 null
             }
+            val captureSilenced = AtomicBoolean(false)
+            val recordingCallback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                object : AudioManager.AudioRecordingCallback() {
+                    override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) {
+                        val activeConfiguration = configs.firstOrNull {
+                            it.clientAudioSessionId == recorder.audioSessionId
+                        }
+                        if (activeConfiguration?.isClientSilenced == true) {
+                            captureSilenced.set(true)
+                        }
+                    }
+                }.also { callback ->
+                    recorder.registerAudioRecordingCallback(mainExecutor, callback)
+                }
+            } else {
+                null
+            }
             val timestamp = AudioTimestamp()
             var lastTimestampFrame: Long? = null
             var lastTimestampWrittenFrames = 0L
             var capturedInputFrames = 0L
+            var stopServiceAfterCapture = false
             try {
                 recorder.startRecording()
                 while (true) {
                     currentCoroutineContext().ensureActive()
+                    if (captureSilenced.get()) {
+                        throw AudioCaptureException(ERROR_AUDIO_CLIENT_SILENCED)
+                    }
                     val read = recorder.read(buffer, 0, buffer.size, AudioRecord.READ_NON_BLOCKING)
                     when {
                         read > 0 -> {
@@ -449,11 +473,11 @@ class AudioCaptureService : Service() {
                         }
                         read == AudioRecord.ERROR_DEAD_OBJECT && !stoppingCapture -> {
                             captureMetrics = captureMetrics.copy(readErrorCount = captureMetrics.readErrorCount + 1)
-                            throw AudioCaptureException(ERROR_DEAD_OBJECT)
+                            throw AudioCaptureException(ERROR_AUDIO_DEAD_OBJECT)
                         }
                         read < 0 && !stoppingCapture -> {
                             captureMetrics = captureMetrics.copy(readErrorCount = captureMetrics.readErrorCount + 1)
-                            throw AudioCaptureException(ERROR_READ_FAILED)
+                            throw AudioCaptureException(ERROR_AUDIO_READ_FAILED)
                         }
                         read < 0 -> break
                         else -> delay(NON_BLOCKING_READ_RETRY_MS)
@@ -462,15 +486,47 @@ class AudioCaptureService : Service() {
             } catch (_: CancellationException) {
                 throw CancellationException()
             } catch (error: AudioCaptureException) {
-                fail(error.code)
+                finishUnexpectedCapture(error.code)
+                stopServiceAfterCapture = true
             } catch (_: SecurityException) {
-                fail(ERROR_PERMISSION_DENIED)
+                finishUnexpectedCapture(ERROR_PERMISSION_DENIED)
+                stopServiceAfterCapture = true
             } finally {
+                if (recordingCallback != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    recorder.unregisterAudioRecordingCallback(recordingCallback)
+                }
                 runCatching { recorder.stop() }
                 recorder.release()
                 if (audioRecord === recorder) audioRecord = null
             }
+            if (stopServiceAfterCapture) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
+    }
+
+    private suspend fun finishUnexpectedCapture(errorCode: String) {
+        val recoverable = captureFailureDisposition(errorCode) == CaptureFailureDisposition.RECOVERABLE
+        if (recoverable) {
+            captureMetrics = captureMetrics.copy(
+                discontinuityCount = captureMetrics.discontinuityCount + 1,
+            )
+        }
+        writer?.closeSegment()
+        flushVad()
+        releaseIncrementalAsr(drain = false)
+        val status = if (recoverable) SessionStatus.RECOVERING else SessionStatus.FAILED
+        persistCheckpoint(status, errorCode)
+        writer?.writeLifecycleEvent(
+            if (recoverable) EVENT_INTERRUPTED else EVENT_FAILED,
+            status,
+            if (recoverable) SOURCE_SYSTEM else SOURCE_RUNTIME,
+            errorCode,
+        )
+        releaseVad()
+        terminal = true
+        publish(status, errorCode)
     }
 
     private suspend fun stopCapture() {
@@ -782,8 +838,6 @@ class AudioCaptureService : Service() {
         private const val ERROR_UNSUPPORTED_FORMAT = "AUDIO_FORMAT_UNSUPPORTED"
         private const val ERROR_INITIALIZATION_FAILED = "AUDIO_INITIALIZATION_FAILED"
         private const val ERROR_SESSION_NOT_READY = "AUDIO_SESSION_NOT_READY"
-        private const val ERROR_READ_FAILED = "AUDIO_READ_FAILED"
-        private const val ERROR_DEAD_OBJECT = "AUDIO_DEAD_OBJECT"
         private const val ERROR_VAD_INITIALIZATION_FAILED = "VAD_INITIALIZATION_FAILED"
         private const val ERROR_VAD_PROCESSING_FAILED = "VAD_PROCESSING_FAILED"
         private const val ERROR_RECOVERY_FAILED = "AUDIO_RECOVERY_FAILED"

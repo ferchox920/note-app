@@ -80,6 +80,13 @@ SHA-256, y continuar con el siguiente número de segmento.
 5. Nunca considerar correcto un reinicio silencioso que oculte un hueco: cualquier
    discontinuidad o frames perdidos debe quedar contabilizado.
 
+En Android 10 o superior la app observa `AudioRecordingConfiguration.isClientSilenced`.
+Si una captura de mayor prioridad silencia el cliente, debe cerrar el segmento,
+persistir `RECOVERING` con `AUDIO_CLIENT_SILENCED`, incrementar el contador de
+discontinuidades y escribir `INTERRUPTED` con origen `system`. `AUDIO_DEAD_OBJECT`
+o un error de lectura durante la preempción siguen la misma política recuperable;
+errores de formato, alineación o integridad permanecen terminales.
+
 La llamada es un caso separado porque el sistema puede reservar el micrófono para
 telefonía. G1 exige que el comportamiento sea explícito y recuperable, no que se
 grabe el audio de la llamada.
