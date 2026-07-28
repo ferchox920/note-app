@@ -138,4 +138,25 @@ class AudioSessionWriterTest {
 
         assertEquals("whisper-base-multilingual-q5_1", recovered.incrementalModelId)
     }
+
+    @Test
+    fun `lifecycle events are immutable ordered and recovered`() {
+        val format = PcmFormat(16_000)
+        val writer = AudioSessionWriter(root, "session-8", format)
+        writer.writeLifecycleEvent("STARTED", SessionStatus.RECORDING, "ui")
+        writer.writeLifecycleEvent("PAUSED", SessionStatus.PAUSED, "notification")
+        writer.writeCheckpoint(SessionStatus.PAUSED)
+
+        val recovered = AudioSessionWriter.recover(root, "session-8", format)
+        recovered.writeLifecycleEvent("RESUMED", SessionStatus.RECORDING, "ui")
+
+        val directory = File(writer.sessionDirectory, AudioSessionWriter.LIFECYCLE_EVENTS_DIRECTORY)
+        assertEquals(
+            listOf("event-0000.json", "event-0001.json", "event-0002.json"),
+            directory.listFiles()!!.map(File::getName).sorted(),
+        )
+        assertTrue(directory.resolve("event-0000.json").readText().contains("\"event\":\"STARTED\""))
+        assertTrue(directory.resolve("event-0001.json").readText().contains("\"source\":\"notification\""))
+        assertTrue(directory.resolve("event-0002.json").readText().contains("\"event\":\"RESUMED\""))
+    }
 }

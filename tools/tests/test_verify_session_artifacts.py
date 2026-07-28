@@ -155,6 +155,43 @@ class VerifySessionArtifactsTest(unittest.TestCase):
         self.assertEqual(["segment-0001.pcm"], report["pcm"]["unlistedPcm"])
         self.assertEqual(1_280, report["pcm"]["actualTotalBytes"])
 
+    def test_validates_required_lifecycle_events_without_exposing_content(self):
+        directory = self.session / "lifecycle-events"
+        directory.mkdir()
+        events = [
+            ("STARTED", "RECORDING", "ui", 0, 0),
+            ("PAUSED", "PAUSED", "notification", 10, 320),
+            ("RESUMED", "RECORDING", "ui", 10, 320),
+            ("COMPLETED", "COMPLETED", "ui", 20, 640),
+        ]
+        for sequence, (event, status, source, duration_ms, total_bytes) in enumerate(events):
+            (directory / f"event-{sequence:04d}.json").write_text(json.dumps({
+                "schemaVersion": 1,
+                "sequence": sequence,
+                "sessionId": "session-1",
+                "event": event,
+                "status": status,
+                "source": source,
+                "observedAtEpochMs": 1_000 + sequence,
+                "observedAtMonotonicMs": 2_000 + sequence,
+                "audioDurationMs": duration_ms,
+                "totalBytes": total_bytes,
+                "errorCode": None,
+            }), encoding="utf-8")
+
+        report = verify_session(
+            self.session,
+            required_lifecycle_events=["STARTED", "PAUSED", "RESUMED", "COMPLETED"],
+        )
+
+        self.assertEqual(4, report["lifecycle"]["eventCount"])
+        self.assertEqual("notification", report["lifecycle"]["events"][1]["source"])
+        self.assertNotIn("sensitive", json.dumps(report))
+
+    def test_rejects_missing_required_lifecycle_event(self):
+        with self.assertRaisesRegex(ValueError, "Missing required lifecycle events"):
+            verify_session(self.session, required_lifecycle_events=["STARTED"])
+
 
 if __name__ == "__main__":
     unittest.main()

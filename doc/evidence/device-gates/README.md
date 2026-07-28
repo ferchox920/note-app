@@ -42,7 +42,9 @@ menos una configuración con RTF cercano o inferior a 1.
 Grabar 90 minutos con pantalla apagada, incluyendo pausa/reanudación, y finalizar:
 
 ```powershell
-.\tools\collect-device-session.ps1 -SessionId <sessionId>
+.\tools\collect-device-session.ps1 `
+  -SessionId <sessionId> `
+  -RequireLifecycleEvent STARTED,PAUSED,RESUMED,COMPLETED
 ```
 
 `verification.json` debe mostrar estado `COMPLETED`, cero errores/discontinuidades

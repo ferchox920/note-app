@@ -31,6 +31,9 @@ class EvaluateDeviceGatesTest(unittest.TestCase):
                 "segmentCount": 2, "listedSegmentCount": 2,
             },
             "vad": {"segmentCount": 5, "processedDurationMs": 5_400_000},
+            "lifecycle": {
+                "eventNames": ["STARTED", "PAUSED", "RESUMED", "COMPLETED"],
+            },
             "asr": [
                 {"modelId": MODULE.TINY_MODEL, "chunkCount": 2, "realTimeFactor": 0.8, "peakPssKb": 10, "maximumThermalStatus": 1},
                 {"modelId": MODULE.BASE_MODEL, "chunkCount": 2, "realTimeFactor": 1.1, "peakPssKb": 20, "maximumThermalStatus": 2},

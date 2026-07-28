@@ -80,6 +80,7 @@ class AudioCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: return START_NOT_STICKY
+        val commandSource = intent.getStringExtra(EXTRA_COMMAND_SOURCE) ?: SOURCE_UNKNOWN
         if (action == ACTION_START || action == ACTION_RECOVER) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 RecordingRuntime.update(
@@ -99,12 +100,16 @@ class AudioCaptureService : Service() {
                     ACTION_START -> startNewSession(
                         CapturePipeline.fromId(intent.getStringExtra(EXTRA_CAPTURE_PIPELINE)),
                         intent.getStringExtra(EXTRA_INCREMENTAL_MODEL_ID),
+                        commandSource,
                     )
-                    ACTION_RECOVER -> recoverSession(intent.getStringExtra(EXTRA_SESSION_ID))
-                    ACTION_PAUSE -> pauseSession()
-                    ACTION_RESUME -> resumeSession()
-                    ACTION_COMPLETE -> finishSession(SessionStatus.COMPLETED)
-                    ACTION_ABORT -> finishSession(SessionStatus.ABORTED)
+                    ACTION_RECOVER -> recoverSession(
+                        intent.getStringExtra(EXTRA_SESSION_ID),
+                        commandSource,
+                    )
+                    ACTION_PAUSE -> pauseSession(commandSource)
+                    ACTION_RESUME -> resumeSession(commandSource)
+                    ACTION_COMPLETE -> finishSession(SessionStatus.COMPLETED, commandSource)
+                    ACTION_ABORT -> finishSession(SessionStatus.ABORTED, commandSource)
                 }
             }
         }
@@ -117,6 +122,7 @@ class AudioCaptureService : Service() {
     private suspend fun startNewSession(
         requestedPipeline: CapturePipeline,
         requestedIncrementalModelId: String?,
+        commandSource: String,
     ) {
         if (writer != null || captureJob?.isActive == true) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -147,13 +153,14 @@ class AudioCaptureService : Service() {
         }
         setupIncrementalAsr(requestedIncrementalModelId)
         persistCheckpoint(SessionStatus.RECORDING)
+        writer?.writeLifecycleEvent(EVENT_STARTED, SessionStatus.RECORDING, commandSource)
         nextCheckpointAtBytes = CHECKPOINT_INTERVAL_BYTES
         publish(SessionStatus.RECORDING)
         startInForeground(getString(R.string.recording_active), paused = false)
         startCapture()
     }
 
-    private suspend fun recoverSession(sessionId: String?) {
+    private suspend fun recoverSession(sessionId: String?, commandSource: String) {
         if (writer != null || captureJob?.isActive == true) return
         if (sessionId.isNullOrBlank()) {
             fail(ERROR_RECOVERY_FAILED)
@@ -167,6 +174,11 @@ class AudioCaptureService : Service() {
                 expectedFormat = format,
             )
             writer = recoveredWriter
+            recoveredWriter.writeLifecycleEvent(
+                EVENT_RECOVERY_STARTED,
+                SessionStatus.RECOVERING,
+                commandSource,
+            )
             captureMetrics = recoveredWriter.checkpointMetrics
             capturePipeline = recoveredWriter.capturePipeline
             val timeline = runCatching {
@@ -194,6 +206,11 @@ class AudioCaptureService : Service() {
             publish(SessionStatus.RECOVERING)
             startInForeground(getString(R.string.recording_preparing), paused = false)
             persistCheckpoint(SessionStatus.RECORDING)
+            recoveredWriter.writeLifecycleEvent(
+                EVENT_RECOVERED,
+                SessionStatus.RECORDING,
+                commandSource,
+            )
             nextCheckpointAtBytes = recoveredWriter.totalBytes + CHECKPOINT_INTERVAL_BYTES
             publish(SessionStatus.RECORDING)
             startInForeground(getString(R.string.recording_active), paused = false)
@@ -316,33 +333,40 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private suspend fun pauseSession() {
+    private suspend fun pauseSession(commandSource: String) {
         if (RecordingRuntime.state.value.status != SessionStatus.RECORDING) return
         stopCapture()
         writer?.closeSegment()
         flushVad()
         persistCheckpoint(SessionStatus.PAUSED)
+        writer?.writeLifecycleEvent(EVENT_PAUSED, SessionStatus.PAUSED, commandSource)
         publish(SessionStatus.PAUSED)
         startInForeground(getString(R.string.recording_paused), paused = true)
     }
 
     @SuppressLint("MissingPermission")
-    private fun resumeSession() {
+    private fun resumeSession(commandSource: String) {
         if (RecordingRuntime.state.value.status != SessionStatus.PAUSED) return
         persistCheckpoint(SessionStatus.RECORDING)
+        writer?.writeLifecycleEvent(EVENT_RESUMED, SessionStatus.RECORDING, commandSource)
         nextCheckpointAtBytes = (writer?.totalBytes ?: 0L) + CHECKPOINT_INTERVAL_BYTES
         publish(SessionStatus.RECORDING)
         startInForeground(getString(R.string.recording_active), paused = false)
         startCapture()
     }
 
-    private suspend fun finishSession(status: SessionStatus) {
+    private suspend fun finishSession(status: SessionStatus, commandSource: String) {
         if (writer == null) return
         stopCapture()
         writer?.closeSegment()
         flushVad()
         releaseIncrementalAsr(drain = status == SessionStatus.COMPLETED)
         persistCheckpoint(status)
+        writer?.writeLifecycleEvent(
+            if (status == SessionStatus.COMPLETED) EVENT_COMPLETED else EVENT_ABORTED,
+            status,
+            commandSource,
+        )
         releaseVad()
         terminal = true
         publish(status)
@@ -467,6 +491,12 @@ class AudioCaptureService : Service() {
         flushVad()
         releaseIncrementalAsr(drain = false)
         persistCheckpoint(SessionStatus.FAILED, errorCode)
+        writer?.writeLifecycleEvent(
+            EVENT_FAILED,
+            SessionStatus.FAILED,
+            SOURCE_RUNTIME,
+            errorCode,
+        )
         releaseVad()
         terminal = true
         publish(SessionStatus.FAILED, errorCode)
@@ -661,7 +691,9 @@ class AudioCaptureService : Service() {
     }
 
     private fun servicePendingIntent(action: String, requestCode: Int): PendingIntent {
-        val intent = Intent(this, AudioCaptureService::class.java).setAction(action)
+        val intent = Intent(this, AudioCaptureService::class.java)
+            .setAction(action)
+            .putExtra(EXTRA_COMMAND_SOURCE, SOURCE_NOTIFICATION)
         return PendingIntent.getService(
             this,
             requestCode,
@@ -687,6 +719,11 @@ class AudioCaptureService : Service() {
                 flushVad()
                 releaseIncrementalAsr(drain = false)
                 persistCheckpoint(SessionStatus.RECOVERING)
+                writer?.writeLifecycleEvent(
+                    EVENT_INTERRUPTED,
+                    SessionStatus.RECOVERING,
+                    SOURCE_SYSTEM,
+                )
                 releaseVad()
                 publish(SessionStatus.RECOVERING)
             }
@@ -709,6 +746,22 @@ class AudioCaptureService : Service() {
         const val EXTRA_SESSION_ID = "com.noteapp.audio.extra.SESSION_ID"
         const val EXTRA_CAPTURE_PIPELINE = "com.noteapp.audio.extra.CAPTURE_PIPELINE"
         const val EXTRA_INCREMENTAL_MODEL_ID = "com.noteapp.audio.extra.INCREMENTAL_MODEL_ID"
+        const val EXTRA_COMMAND_SOURCE = "com.noteapp.audio.extra.COMMAND_SOURCE"
+        const val SOURCE_UI = "ui"
+        const val SOURCE_NOTIFICATION = "notification"
+        const val SOURCE_SYSTEM = "system"
+        const val SOURCE_RUNTIME = "runtime"
+        private const val SOURCE_UNKNOWN = "unknown"
+
+        private const val EVENT_STARTED = "STARTED"
+        private const val EVENT_PAUSED = "PAUSED"
+        private const val EVENT_RESUMED = "RESUMED"
+        private const val EVENT_RECOVERY_STARTED = "RECOVERY_STARTED"
+        private const val EVENT_RECOVERED = "RECOVERED"
+        private const val EVENT_COMPLETED = "COMPLETED"
+        private const val EVENT_ABORTED = "ABORTED"
+        private const val EVENT_FAILED = "FAILED"
+        private const val EVENT_INTERRUPTED = "INTERRUPTED"
 
         private const val SAMPLE_RATE_HZ = 16_000
         private const val MINIMUM_BUFFER_BYTES = 6_400

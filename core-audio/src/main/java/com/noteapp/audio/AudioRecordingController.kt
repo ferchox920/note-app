@@ -42,6 +42,7 @@ class AudioRecordingController(context: Context) {
                 incrementalModelId?.let {
                     putExtra(AudioCaptureService.EXTRA_INCREMENTAL_MODEL_ID, it)
                 }
+                putExtra(AudioCaptureService.EXTRA_COMMAND_SOURCE, AudioCaptureService.SOURCE_UI)
             }
         if (foreground) applicationContext.startForegroundService(intent)
         else applicationContext.startService(intent)

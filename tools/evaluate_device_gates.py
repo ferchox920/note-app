@@ -101,11 +101,15 @@ def evaluate_g0(device: dict, verification: dict) -> dict[str, object]:
 def evaluate_g1(device: dict, verification: dict) -> dict[str, object]:
     processed_ms = verification.get("vad", {}).get("processedDurationMs", -1)
     duration_ms = verification.get("durationMs", 0)
+    lifecycle_names = set(verification.get("lifecycle", {}).get("eventNames", []))
     checks = {
         "s25Ultra": is_s25_ultra(device),
         "durationAtLeast90Minutes": verification.get("durationMs", 0) >= 90 * 60 * 1_000,
         "captureIntegrity": capture_clean(verification),
         "vadCoveredRecordedTimeline": 0 <= duration_ms - processed_ms < 20,
+        "pauseResumeAndCompletionRecorded": {
+            "STARTED", "PAUSED", "RESUMED", "COMPLETED"
+        }.issubset(lifecycle_names),
     }
     return result(
         "G1",

@@ -43,6 +43,10 @@ La build actual captura PCM16 mono mediante un foreground service y permite comp
 checksum y checkpoint recuperable; la selección definitiva sigue pendiente del
 Galaxy S25 Ultra según ADR-001.
 
+Las sesiones nuevas guardan también un diario técnico inmutable de inicio, pausa,
+reanudación, recuperación y cierre. El verificador puede exigir estos eventos sin
+incluir audio ni texto en el reporte sanitizado.
+
 WebRTC VAD procesa frames de 20 ms y Silero frames de 32 ms sobre el mismo PCM; el
 runner de comparación persiste timelines separados. Los parámetros de captura,
 detector y endpointing siguen siendo provisionales hasta evaluarlos contra intervalos

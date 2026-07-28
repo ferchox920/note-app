@@ -40,6 +40,7 @@ class AudioSessionWriter(
 
     private val segments = restoredSegments.toMutableList()
     private var activeSink: SegmentSink? = null
+    private var nextLifecycleEventSequence = existingLifecycleEventCount()
     var checkpointMetrics: AudioCaptureMetrics = restoredMetrics
         private set
 
@@ -101,6 +102,52 @@ class AudioSessionWriter(
         }
     }
 
+    fun writeLifecycleEvent(
+        event: String,
+        status: SessionStatus,
+        source: String,
+        errorCode: String? = null,
+    ) {
+        require(event.matches(Regex("[A-Z_]+"))) { "Invalid lifecycle event" }
+        require(source.matches(Regex("[a-z-]+"))) { "Invalid lifecycle event source" }
+        val sequence = nextLifecycleEventSequence
+        val eventsDirectory = File(sessionDirectory, LIFECYCLE_EVENTS_DIRECTORY).apply {
+            check(exists() || mkdirs()) { "Unable to create lifecycle events directory" }
+        }
+        val fileName = "event-${sequence.toString().padStart(4, '0')}.json"
+        val target = File(eventsDirectory, fileName)
+        val temporary = File(eventsDirectory, "$fileName.tmp")
+        val durationMs = totalBytes * 1_000L / format.bytesPerSecond
+        val errorJson = errorCode?.let(::jsonString) ?: "null"
+        val json = """{"schemaVersion":1,"sequence":$sequence,"sessionId":${jsonString(sessionId)},"event":${jsonString(event)},"status":"${status.name}","source":${jsonString(source)},"observedAtEpochMs":${System.currentTimeMillis()},"observedAtMonotonicMs":${System.nanoTime() / 1_000_000L},"audioDurationMs":$durationMs,"totalBytes":$totalBytes,"errorCode":$errorJson}"""
+        temporary.writeText(json, Charsets.UTF_8)
+        try {
+            Files.move(
+                temporary.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        nextLifecycleEventSequence += 1
+    }
+
+    private fun existingLifecycleEventCount(): Int {
+        val directory = File(sessionDirectory, LIFECYCLE_EVENTS_DIRECTORY)
+        if (!directory.isDirectory) return 0
+        val files = directory.listFiles { file ->
+            file.isFile && file.name.matches(Regex("event-\\d{4}\\.json"))
+        }.orEmpty().sortedBy { it.name }
+        files.forEachIndexed { index, file ->
+            require(file.name == "event-${index.toString().padStart(4, '0')}.json") {
+                "Non-contiguous lifecycle event sequence"
+            }
+        }
+        return files.size
+    }
+
     inner class SegmentSink internal constructor(
         internal val sequence: Int,
         internal val file: File,
@@ -140,6 +187,7 @@ class AudioSessionWriter(
 
     companion object {
         const val CHECKPOINT_FILE = "checkpoint.json"
+        const val LIFECYCLE_EVENTS_DIRECTORY = "lifecycle-events"
 
         fun recover(
             rootDirectory: File,
@@ -290,6 +338,21 @@ class AudioSessionWriter(
             return digest.digest().joinToString("") { byte ->
                 String.format(Locale.ROOT, "%02x", byte.toInt() and 0xff)
             }
+        }
+
+        private fun jsonString(value: String): String = buildString {
+            append('"')
+            value.forEach { character ->
+                when (character) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> append(character)
+                }
+            }
+            append('"')
         }
     }
 }

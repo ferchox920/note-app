@@ -7,6 +7,7 @@ param(
     [string]$PackageName = "com.noteapp",
     [string[]]$RequireAsrModel = @(),
     [switch]$RequireIncremental,
+    [string[]]$RequireLifecycleEvent = @(),
     [ValidateSet("COMPLETED", "RECOVERING", "PAUSED", "FAILED", "ABORTED")]
     [string]$ExpectedStatus = "COMPLETED",
     [switch]$AllowUnlistedPcm
@@ -111,6 +112,9 @@ $verifierArguments = @(
 )
 foreach ($model in $RequireAsrModel) {
     $verifierArguments += @("--require-asr-model", $model)
+}
+foreach ($eventName in $RequireLifecycleEvent) {
+    $verifierArguments += @("--require-lifecycle-event", $eventName)
 }
 if ($RequireIncremental) { $verifierArguments += "--require-incremental" }
 if ($AllowUnlistedPcm) { $verifierArguments += "--allow-unlisted-pcm" }

@@ -86,7 +86,8 @@ Para cada sesión finalizada:
 .\tools\collect-device-session.ps1 `
   -Adb $adb `
   -Serial R5CY20HYBGJ `
-  -SessionId <sessionId>
+  -SessionId <sessionId> `
+  -RequireLifecycleEvent STARTED,PAUSED,RESUMED,COMPLETED
 ```
 
 La evidencia privada debe contener `verification.json` válido. El informe
@@ -98,6 +99,7 @@ sanitizado de G1 debe registrar:
 - número de segmentos y validación SHA-256;
 - errores de lectura, discontinuidades y frames estimados perdidos;
 - comportamiento de notificación, pausa, background, cierre forzado y llamada;
+- diario técnico ordenado con origen `ui`, `notification`, `system` o `runtime`;
 - riesgos observados y decisión explícita `CONTINUAR`, `AJUSTAR` o `DETENER`.
 
 G1 solo se aprueba si el caso A cumple 90 minutos sin pérdida/corrupción, el caso B

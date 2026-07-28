@@ -130,7 +130,9 @@ offline con la validación incremental G2. Evidencia:
 **Estado al 2026-07-28: EN VALIDACIÓN FÍSICA.** La implementación ya contiene
 foreground service de micrófono, estados de sesión, pausa/reanudación, checkpoint
 atómico cada 10 s, segmentos PCM con SHA-256, recuperación de segmento huérfano y
-métricas de lectura/discontinuidad. G1 se valida con tres casos separados: 90 min
+métricas de lectura/discontinuidad. Cada transición queda además en un diario
+técnico inmutable con secuencia, duración y origen del comando, sin contenido
+sensible. G1 se valida con tres casos separados: 90 min
 con pantalla apagada, cierre forzado recuperable e interrupción por llamada.
 Protocolo:
 [`doc/evidence/sprint-1/g1-device-gate-protocol.md`](doc/evidence/sprint-1/g1-device-gate-protocol.md).

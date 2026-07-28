@@ -182,12 +182,75 @@ def validate_incremental(session_dir: Path, required: bool) -> dict[str, object]
     }
 
 
+def validate_lifecycle_events(
+    session_dir: Path,
+    checkpoint: dict,
+    required_events: list[str],
+) -> dict[str, object]:
+    directory = session_dir / "lifecycle-events"
+    paths = sorted(directory.glob("event-*.json")) if directory.is_dir() else []
+    events: list[dict[str, object]] = []
+    previous_observed_at = -1
+    previous_audio_duration = -1
+    for expected_sequence, path in enumerate(paths):
+        require(path.name == f"event-{expected_sequence:04d}.json", "Lifecycle event file sequence is not contiguous")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        require(data.get("schemaVersion") == 1, "Unsupported lifecycle event schema")
+        require(data.get("sequence") == expected_sequence, "Lifecycle event sequence is not contiguous")
+        require(data.get("sessionId") == checkpoint["sessionId"], "Lifecycle sessionId mismatch")
+        require(
+            data.get("status") in {"NEW", "RECORDING", "PAUSED", "RECOVERING", "COMPLETED", "FAILED", "ABORTED"},
+            "Invalid lifecycle status",
+        )
+        require(
+            isinstance(data.get("event"), str) and data["event"].replace("_", "").isalpha(),
+            "Invalid lifecycle event name",
+        )
+        require(
+            isinstance(data.get("source"), str) and data["source"].replace("-", "").isalpha(),
+            "Invalid lifecycle event source",
+        )
+        observed_at = data.get("observedAtMonotonicMs", data.get("observedAtEpochMs"))
+        audio_duration = data.get("audioDurationMs")
+        total_bytes = data.get("totalBytes")
+        require(isinstance(observed_at, int) and observed_at >= previous_observed_at, "Lifecycle time is not monotonic")
+        require(
+            isinstance(audio_duration, int)
+            and previous_audio_duration <= audio_duration <= checkpoint["durationMs"],
+            "Lifecycle audio duration is invalid",
+        )
+        require(
+            isinstance(total_bytes, int) and 0 <= total_bytes <= checkpoint["totalBytes"],
+            "Lifecycle byte count is invalid",
+        )
+        previous_observed_at = observed_at
+        previous_audio_duration = audio_duration
+        events.append({
+            "sequence": expected_sequence,
+            "event": data["event"],
+            "status": data["status"],
+            "source": data["source"],
+            "audioDurationMs": audio_duration,
+            "totalBytes": total_bytes,
+            "errorCode": data.get("errorCode"),
+        })
+    event_names = [str(event["event"]) for event in events]
+    missing = sorted(set(required_events) - set(event_names))
+    require(not missing, f"Missing required lifecycle events: {', '.join(missing)}")
+    return {
+        "eventCount": len(events),
+        "eventNames": event_names,
+        "events": events,
+    }
+
+
 def verify_session(
     session_dir: Path,
     expected_status: str = "COMPLETED",
     allow_unlisted_pcm: bool = False,
     required_models: list[str] | None = None,
     require_incremental: bool = False,
+    required_lifecycle_events: list[str] | None = None,
 ) -> dict[str, object]:
     checkpoint_path = session_dir / "checkpoint.json"
     require(checkpoint_path.is_file(), "Missing checkpoint.json")
@@ -202,6 +265,7 @@ def verify_session(
     vad = validate_vad(session_dir, checkpoint)
     asr = validate_asr_results(session_dir, required_models or [])
     incremental = validate_incremental(session_dir, require_incremental)
+    lifecycle = validate_lifecycle_events(session_dir, checkpoint, required_lifecycle_events or [])
     return {
         "schemaVersion": 1,
         "sessionId": checkpoint["sessionId"],
@@ -218,6 +282,7 @@ def verify_session(
         "vad": vad,
         "asr": asr,
         "incremental": incremental,
+        "lifecycle": lifecycle,
         "contentIncluded": False,
     }
 
@@ -230,6 +295,7 @@ def main() -> int:
     parser.add_argument("--allow-unlisted-pcm", action="store_true")
     parser.add_argument("--require-asr-model", action="append", default=[])
     parser.add_argument("--require-incremental", action="store_true")
+    parser.add_argument("--require-lifecycle-event", action="append", default=[])
     args = parser.parse_args()
     report = verify_session(
         args.session_dir,
@@ -237,6 +303,7 @@ def main() -> int:
         allow_unlisted_pcm=args.allow_unlisted_pcm,
         required_models=args.require_asr_model,
         require_incremental=args.require_incremental,
+        required_lifecycle_events=args.require_lifecycle_event,
     )
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
