@@ -13,6 +13,7 @@ import com.noteapp.domain.RecordingSession
 import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
+import com.noteapp.asr.AsrLabConfig
 import com.noteapp.asr.IncrementalTranscriptSegment
 import com.noteapp.asr.ModelVerificationResult
 import com.noteapp.asr.WhisperModelCatalog
@@ -47,6 +48,7 @@ data class RecordingUiState(
     val asrResult: AsrLabResult? = null,
     val asrError: String? = null,
     val recoverableSessions: List<RecordingSession> = emptyList(),
+    val completedSessions: List<RecordingSession> = emptyList(),
     val labSessionId: String? = null,
     val readErrorCount: Int = 0,
     val discontinuityCount: Int = 0,
@@ -98,7 +100,9 @@ class RecordingViewModel @Inject constructor(
                 asrResult = asr.result,
                 asrError = asr.error,
                 recoverableSessions = asr.recoverableSessions,
+                completedSessions = asr.completedSessions,
                 labSessionId = runtime.sessionId.takeIf { runtime.status == SessionStatus.COMPLETED }
+                    ?: asr.selectedLabSessionId
                     ?: asr.completedSessions.firstOrNull()?.id,
                 readErrorCount = runtime.readErrorCount,
                 discontinuityCount = runtime.discontinuityCount,
@@ -165,7 +169,10 @@ class RecordingViewModel @Inject constructor(
         }
     }
 
-    fun transcribe(descriptor: WhisperModelDescriptor) {
+    fun transcribe(
+        descriptor: WhisperModelDescriptor,
+        config: AsrLabConfig = AsrLabConfig.Default,
+    ) {
         val sessionId = uiState.value.labSessionId ?: return
         viewModelScope.launch {
             asrState.value = asrState.value.copy(running = true, result = null, error = null)
@@ -174,6 +181,7 @@ class RecordingViewModel @Inject constructor(
                     sessionDirectory = File(applicationContext.filesDir, "recordings/$sessionId"),
                     modelFile = File(modelsDirectory, descriptor.fileName),
                     descriptor = descriptor,
+                    config = config,
                 )
             }.onSuccess { result ->
                 asrState.value = asrState.value.copy(running = false, result = result)
@@ -190,6 +198,17 @@ class RecordingViewModel @Inject constructor(
         controller.recover(sessionId)
         asrState.value = asrState.value.copy(
             recoverableSessions = asrState.value.recoverableSessions.filterNot { it.id == sessionId },
+        )
+    }
+
+    fun selectLabSession(sessionId: String) {
+        check(asrState.value.completedSessions.any { it.id == sessionId }) {
+            "LAB_SESSION_NOT_FOUND"
+        }
+        asrState.value = asrState.value.copy(
+            selectedLabSessionId = sessionId,
+            result = null,
+            error = null,
         )
     }
 
@@ -250,6 +269,7 @@ class RecordingViewModel @Inject constructor(
         val error: String? = null,
         val recoverableSessions: List<RecordingSession> = emptyList(),
         val completedSessions: List<RecordingSession> = emptyList(),
+        val selectedLabSessionId: String? = null,
         val vadComparisonRunning: Boolean = false,
         val vadComparisonResult: VadComparisonResult? = null,
         val vadComparisonError: String? = null,

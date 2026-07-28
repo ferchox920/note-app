@@ -13,6 +13,9 @@ import java.io.File
 data class AsrLabResult(
     val modelId: String,
     val capturePipelineId: String,
+    val benchmarkConfigId: String,
+    val threadCount: Int,
+    val maxChunkMs: Long,
     val chunkCount: Int,
     val audioDurationMs: Long,
     val inferenceDurationMs: Long,
@@ -21,6 +24,8 @@ data class AsrLabResult(
     val peakPssKb: Int,
     val maximumThermalStatus: Int,
     val maximumBatteryTemperatureC: Double?,
+    val nativeSystemInfo: String,
+    val nativeTimings: WhisperNativeTimings,
     val transcript: String,
 )
 
@@ -32,10 +37,11 @@ class AsrLabRunner(context: Context) {
         sessionDirectory: File,
         modelFile: File,
         descriptor: WhisperModelDescriptor,
+        config: AsrLabConfig = AsrLabConfig.Default,
     ): AsrLabResult {
         check(runMutex.tryLock()) { "ASR_ALREADY_RUNNING" }
         return try {
-            transcribeSessionLocked(sessionDirectory, modelFile, descriptor)
+            transcribeSessionLocked(sessionDirectory, modelFile, descriptor, config)
         } finally {
             runMutex.unlock()
         }
@@ -45,10 +51,16 @@ class AsrLabRunner(context: Context) {
         sessionDirectory: File,
         modelFile: File,
         descriptor: WhisperModelDescriptor,
+        config: AsrLabConfig,
     ): AsrLabResult {
-        val input = withContext(Dispatchers.IO) { loadInput(sessionDirectory) }
+        val input = withContext(Dispatchers.IO) { loadInput(sessionDirectory, config) }
         require(input.chunks.isNotEmpty()) { "No VAD speech segments available" }
-        val engine = WhisperEngine.create(modelFile, descriptor)
+        val engine = WhisperEngine.create(
+            modelFile = modelFile,
+            descriptor = descriptor,
+            requestedThreads = config.threadCount,
+        )
+        val nativeSystemInfo = WhisperEngine.systemInfo()
         val performanceSampler = DevicePerformanceSampler(appContext)
         val samplerJob = performanceSampler.start(CoroutineScope(SupervisorJob() + Dispatchers.Default))
         val labStarted = System.nanoTime()
@@ -76,10 +88,20 @@ class AsrLabRunner(context: Context) {
                 .trim()
             val audioMs = transcriptions.sumOf { it.audioDurationMs }
             val inferenceMs = transcriptions.sumOf { it.inferenceDurationMs }
+            val nativeTimings = WhisperNativeTimings(
+                sampleMs = transcriptions.sumOf { it.nativeTimings.sampleMs.toDouble() }.toFloat(),
+                encodeMs = transcriptions.sumOf { it.nativeTimings.encodeMs.toDouble() }.toFloat(),
+                decodeMs = transcriptions.sumOf { it.nativeTimings.decodeMs.toDouble() }.toFloat(),
+                batchMs = transcriptions.sumOf { it.nativeTimings.batchMs.toDouble() }.toFloat(),
+                promptMs = transcriptions.sumOf { it.nativeTimings.promptMs.toDouble() }.toFloat(),
+            )
             val performance = performanceSampler.finish(samplerJob)
             return AsrLabResult(
                 modelId = descriptor.id,
                 capturePipelineId = input.capturePipelineId,
+                benchmarkConfigId = config.id,
+                threadCount = config.threadCount,
+                maxChunkMs = config.maxChunkMs,
                 chunkCount = input.chunks.size,
                 audioDurationMs = audioMs,
                 inferenceDurationMs = inferenceMs,
@@ -88,6 +110,8 @@ class AsrLabRunner(context: Context) {
                 peakPssKb = performance.peakPssKb,
                 maximumThermalStatus = performance.maximumThermalStatus,
                 maximumBatteryTemperatureC = performance.maximumBatteryTemperatureC,
+                nativeSystemInfo = nativeSystemInfo,
+                nativeTimings = nativeTimings,
                 transcript = transcript,
             ).also { result ->
                 withContext(Dispatchers.IO) { persistResult(sessionDirectory, result, transcriptions) }
@@ -98,7 +122,10 @@ class AsrLabRunner(context: Context) {
         }
     }
 
-    private fun loadInput(sessionDirectory: File): LabInput {
+    private fun loadInput(
+        sessionDirectory: File,
+        config: AsrLabConfig,
+    ): LabInput {
         val checkpointJson = File(sessionDirectory, "checkpoint.json").readText()
         val capturePipelineId = Regex("\\\"capturePipeline\\\":\\\"([^\\\"]+)\\\"")
             .find(checkpointJson)?.groupValues?.get(1) ?: "direct-16k"
@@ -130,7 +157,7 @@ class AsrLabRunner(context: Context) {
                 }
             }
         }
-        return LabInput(pcm, AsrChunkAssembler.assemble(intervals), capturePipelineId)
+        return LabInput(pcm, AsrChunkAssembler.assemble(intervals, config), capturePipelineId)
     }
 
     private fun persistResult(
@@ -148,10 +175,13 @@ class AsrLabRunner(context: Context) {
             })
         }
         val json = JSONObject().apply {
-            put("schemaVersion", 1)
+            put("schemaVersion", 2)
             put("modelId", result.modelId)
             put("capturePipelineId", result.capturePipelineId)
             put("language", "es")
+            put("benchmarkConfigId", result.benchmarkConfigId)
+            put("threadCount", result.threadCount)
+            put("maxChunkMs", result.maxChunkMs)
             put("chunkCount", result.chunkCount)
             put("audioDurationMs", result.audioDurationMs)
             put("inferenceDurationMs", result.inferenceDurationMs)
@@ -160,10 +190,21 @@ class AsrLabRunner(context: Context) {
             put("peakPssKb", result.peakPssKb)
             put("maximumThermalStatus", result.maximumThermalStatus)
             put("maximumBatteryTemperatureC", result.maximumBatteryTemperatureC ?: JSONObject.NULL)
+            put("nativeSystemInfo", result.nativeSystemInfo)
+            put("nativeTimings", JSONObject().apply {
+                put("sampleMs", result.nativeTimings.sampleMs.toDouble())
+                put("encodeMs", result.nativeTimings.encodeMs.toDouble())
+                put("decodeMs", result.nativeTimings.decodeMs.toDouble())
+                put("batchMs", result.nativeTimings.batchMs.toDouble())
+                put("promptMs", result.nativeTimings.promptMs.toDouble())
+            })
             put("transcript", result.transcript)
             put("segments", segments)
         }
-        File(sessionDirectory, "asr-result-${result.modelId}.json").writeText(json.toString())
+        File(
+            sessionDirectory,
+            "asr-result-${result.modelId}-${result.benchmarkConfigId}.json",
+        ).writeText(json.toString())
     }
 
     private data class LabInput(

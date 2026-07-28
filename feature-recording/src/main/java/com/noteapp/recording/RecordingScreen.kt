@@ -32,6 +32,7 @@ import com.noteapp.domain.RecordingIntent
 import com.noteapp.domain.SessionStatus
 import com.noteapp.asr.WhisperModelCatalog
 import com.noteapp.asr.WhisperModelDescriptor
+import com.noteapp.asr.AsrLabConfig
 import com.noteapp.audio.CapturePipeline
 import java.util.Locale
 
@@ -44,6 +45,8 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
     var pendingCapturePipeline by remember { mutableStateOf(CapturePipeline.DIRECT_16_KHZ) }
     var selectedIncrementalModelId by remember { mutableStateOf<String?>(null) }
     var pendingIncrementalModelId by remember { mutableStateOf<String?>(null) }
+    var benchmarkThreadCount by remember { mutableStateOf(4) }
+    var benchmarkChunkSeconds by remember { mutableStateOf(30) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
@@ -84,11 +87,24 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
             pendingModel = descriptor
             modelPicker.launch(arrayOf("application/octet-stream", "*/*"))
         },
-        onTranscribe = viewModel::transcribe,
+        onTranscribe = { descriptor ->
+            viewModel.transcribe(
+                descriptor,
+                AsrLabConfig(
+                    threadCount = benchmarkThreadCount,
+                    maxChunkMs = benchmarkChunkSeconds * 1_000L,
+                ),
+            )
+        },
+        onSelectLabSession = viewModel::selectLabSession,
         onRecoverSession = viewModel::recoverSession,
         onCompareVad = viewModel::compareVad,
         selectedIncrementalModelId = selectedIncrementalModelId,
         onSelectIncrementalModel = { selectedIncrementalModelId = it },
+        benchmarkThreadCount = benchmarkThreadCount,
+        onSelectBenchmarkThreadCount = { benchmarkThreadCount = it },
+        benchmarkChunkSeconds = benchmarkChunkSeconds,
+        onSelectBenchmarkChunkSeconds = { benchmarkChunkSeconds = it },
     )
 }
 
@@ -100,10 +116,15 @@ fun RecordingScreen(
     onStart: (CapturePipeline, String?) -> Unit,
     onImportModel: (WhisperModelDescriptor) -> Unit,
     onTranscribe: (WhisperModelDescriptor) -> Unit,
+    onSelectLabSession: (String) -> Unit,
     onRecoverSession: (String) -> Unit,
     onCompareVad: () -> Unit,
     selectedIncrementalModelId: String?,
     onSelectIncrementalModel: (String?) -> Unit,
+    benchmarkThreadCount: Int,
+    onSelectBenchmarkThreadCount: (Int) -> Unit,
+    benchmarkChunkSeconds: Int,
+    onSelectBenchmarkChunkSeconds: (Int) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -120,6 +141,21 @@ fun RecordingScreen(
         if (state.sessionId == null && state.labSessionId != null) {
             SelectionContainer {
                 Text("Sesión de laboratorio: ${state.labSessionId}", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (state.status == SessionStatus.NEW && state.completedSessions.isNotEmpty()) {
+            Text("Sesiones completadas para laboratorio", modifier = Modifier.padding(top = 12.dp))
+            state.completedSessions.forEach { session ->
+                Button(
+                    enabled = !state.asrRunning && session.id != state.labSessionId,
+                    onClick = { onSelectLabSession(session.id) },
+                    modifier = Modifier.padding(top = 6.dp),
+                ) {
+                    Text(
+                        (if (session.id == state.labSessionId) "En uso " else "Usar ") +
+                            "${session.id.take(8)} (${formatDuration(session.durationMs)})",
+                    )
+                }
             }
         }
         Text("Duración: ${formatDuration(state.durationMs)}")
@@ -299,6 +335,36 @@ fun RecordingScreen(
             Text("Comparación VAD falló: $message", color = MaterialTheme.colorScheme.error)
         }
         Text("Laboratorio ASR", modifier = Modifier.padding(top = 24.dp))
+        Text(
+            "Benchmark: $benchmarkThreadCount hilos · chunks ${benchmarkChunkSeconds}s",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            listOf(2, 4, 6, 8).forEach { threads ->
+                Button(
+                    enabled = !state.asrRunning,
+                    onClick = { onSelectBenchmarkThreadCount(threads) },
+                ) {
+                    Text(if (threads == benchmarkThreadCount) "[$threads] h" else "$threads h")
+                }
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            listOf(10, 20, 30).forEach { seconds ->
+                Button(
+                    enabled = !state.asrRunning,
+                    onClick = { onSelectBenchmarkChunkSeconds(seconds) },
+                ) {
+                    Text(if (seconds == benchmarkChunkSeconds) "[$seconds] s" else "$seconds s")
+                }
+            }
+        }
         WhisperModelCatalog.evaluationModels.forEach { descriptor ->
             val installed = descriptor.id in state.installedModelIds
             Row(
@@ -322,9 +388,13 @@ fun RecordingScreen(
         if (state.asrRunning) Text("Procesando ASR en el dispositivo...")
         state.asrResult?.let { result ->
             Text(
-                "${result.modelId} / ${result.capturePipelineId}: ${result.chunkCount} chunks, RTF ${String.format(Locale.ROOT, "%.2f", result.realTimeFactor)}, PSS pico ${result.peakPssKb / 1024} MiB",
+                "${result.modelId} / ${result.capturePipelineId} / " +
+                    "${result.benchmarkConfigId}: ${result.chunkCount} chunks, " +
+                    "RTF ${String.format(Locale.ROOT, "%.2f", result.realTimeFactor)}, " +
+                    "PSS pico ${result.peakPssKb / 1024} MiB",
                 modifier = Modifier.padding(top = 12.dp),
             )
+            Text(result.nativeSystemInfo, style = MaterialTheme.typography.bodySmall)
             Text(result.transcript.ifBlank { "(sin texto)" })
         }
         state.asrError?.let { message ->

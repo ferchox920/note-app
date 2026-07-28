@@ -124,6 +124,9 @@ def validate_asr_results(session_dir: Path, required_models: list[str]) -> list[
         require(math.isfinite(data["realTimeFactor"]) and data["realTimeFactor"] >= 0, "Invalid ASR RTF")
         results.append({
             "modelId": model_id,
+            "benchmarkConfigId": data.get("benchmarkConfigId"),
+            "threadCount": data.get("threadCount"),
+            "maxChunkMs": data.get("maxChunkMs"),
             "chunkCount": data["chunkCount"],
             "segmentCount": len(data.get("segments", [])),
             "audioDurationMs": data["audioDurationMs"],
@@ -133,6 +136,8 @@ def validate_asr_results(session_dir: Path, required_models: list[str]) -> list[
             "peakPssKb": data.get("peakPssKb"),
             "maximumThermalStatus": data.get("maximumThermalStatus"),
             "maximumBatteryTemperatureC": data.get("maximumBatteryTemperatureC"),
+            "nativeSystemInfo": data.get("nativeSystemInfo"),
+            "nativeTimings": data.get("nativeTimings"),
         })
     missing = sorted(set(required_models) - found_models)
     require(not missing, f"Missing required ASR models: {', '.join(missing)}")

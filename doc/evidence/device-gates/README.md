@@ -1,9 +1,9 @@
 # Ejecución de puertas físicas G0–G2
 
-Estado actual: **G0 cerrado en AJUSTAR**. El 22 de julio de 2026 se ejecutó en el
-Galaxy S25 Ultra `SM-S938B` (`R5CY20HYBGJ`) una sesión autorizada de 6:18. Captura
-y VAD fueron íntegros, pero tiny/base obtuvieron RTF 5,34/6,91. G1 y G2 no deben
-cerrarse hasta resolver o reestimar el rendimiento ASR.
+Estado actual: **G0 superada técnicamente; avanzar a G1**. La sesión autorizada de
+6:18 en el Galaxy S25 Ultra `SM-S938B` (`R5CY20HYBGJ`) conservó captura/VAD
+íntegros. La revalidación optimizada del 28 de julio obtuvo RTF 0,153/0,191 para
+tiny/base. G1 y G2 mantienen sus propias pruebas de 90/45 minutos.
 
 Estas instrucciones producen evidencia privada verificable. No convierten una prueba
 automatizada en aprobación: calidad de texto, duplicaciones, pantalla apagada y

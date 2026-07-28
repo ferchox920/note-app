@@ -32,6 +32,16 @@ $adb = 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe'
 `install -r` conserva los datos y modelos existentes. Una desinstalación completa
 elimina grabaciones y modelos privados.
 
+Para mediciones ASR no usar `assembleDebug`. Preparar e instalar la variante
+optimizada con:
+
+```powershell
+.\tools\prepare-g0-benchmark.ps1 `
+  -Adb 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe' `
+  -Serial R5CY20HYBGJ `
+  -Install
+```
+
 ## Grabar una sesión
 
 1. Elegir **Sin ASR en vivo** para una prueba de captura, o elegir tiny/base para
@@ -48,9 +58,9 @@ elimina grabaciones y modelos privados.
 Desplazarse hasta **Laboratorio ASR** y tocar **Transcribir tiny** o
 **Transcribir base**. Ejecutar sólo una transcripción a la vez y mantener la app
 visible: el build actual de laboratorio no garantiza que el postprocesado sobreviva
-al bloqueo de pantalla. En G0, 6 minutos de audio tardaron aproximadamente 32
-minutos con tiny y 41 minutos con base, por lo que todavía no es una experiencia
-de usuario apta para producción.
+al bloqueo de pantalla. No medir rendimiento con `assembleDebug`: esa variante
+tardó 32/41 minutos. La variante `benchmark` optimizada procesó el mismo audio en
+55/68 segundos con tiny/base.
 
 La grabación y las transcripciones son privadas. No compartir el contenido de
 `artifacts/private/` sin consentimiento explícito.

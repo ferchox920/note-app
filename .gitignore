@@ -12,5 +12,6 @@ captures/
 /artifacts/private/
 /corpus/private/
 __pycache__/
+/.kotlin/
 *.jks
 *.keystore

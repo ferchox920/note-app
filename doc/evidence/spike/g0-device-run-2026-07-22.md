@@ -112,3 +112,16 @@ final requiere confirmar consentimiento, condiciones de captura y calidad del te
 pero tiny (RTF 5,34) y base (RTF 6,91) incumplen el presupuesto. Antes de avanzar a
 G1/G2 debe optimizarse el backend/chunking/threading o evaluarse otro runtime. No se
 acepta todavía Whisper CPU-only actual como ASR incremental del producto.
+
+## Adenda de validez (2026-07-28)
+
+Una auditoría posterior confirmó que esta sesión se ejecutó con una APK debug cuyo
+`ggml-cpu` arm64 no contenía `-O2/-O3`. Las cifras continúan siendo evidencia válida
+de integración y captura, pero no representan una build nativa equivalente a
+producción. La decisión no cambia automáticamente: G0 sigue en **AJUSTAR** hasta
+completar la revalidación optimizada definida en
+[`g0-optimized-benchmark-protocol.md`](g0-optimized-benchmark-protocol.md).
+
+La revalidación se completó el 2026-07-28 y cambió la decisión técnica a
+**CONTINUAR**. Véase
+[`g0-device-run-optimized-2026-07-28.md`](g0-device-run-optimized-2026-07-28.md).

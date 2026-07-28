@@ -28,8 +28,12 @@ add_subdirectory("${WHISPER_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/whisper" EXCLUDE
 
 add_library(noteapp_whisper SHARED whisper_jni.cpp)
 target_include_directories(noteapp_whisper PRIVATE "${WHISPER_ROOT}/include")
+target_compile_definitions(
+    noteapp_whisper
+    PRIVATE NOTEAPP_NATIVE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+)
 target_compile_options(noteapp_whisper PRIVATE
-    $<$<CONFIG:Release>:-O3>
+    $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:-O3>
     -fvisibility=hidden
     -fvisibility-inlines-hidden
 )

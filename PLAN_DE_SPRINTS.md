@@ -87,6 +87,19 @@ RTF 5,34/6,91. Antes de comprometer G1/G2 debe optimizarse o sustituirse el back
 ASR y repetirse la medición. Evidencia sanitizada:
 [`doc/evidence/spike/g0-device-run-2026-07-22.md`](doc/evidence/spike/g0-device-run-2026-07-22.md).
 
+**Revalidación G0.1 iniciada el 2026-07-28.** La auditoría comprobó que aquella
+sesión usó una APK debug donde `ggml-cpu` no tenía `-O2/-O3`. Ya existe una variante
+`benchmark` instalable que resuelve las bibliotecas nativas contra release, verifica
+`-O2/-O3` y `-DNDEBUG`, y permite barrer 2/4/6/8 hilos y chunks de 10/20/30 s.
+Protocolo:
+[`doc/evidence/spike/g0-optimized-benchmark-protocol.md`](doc/evidence/spike/g0-optimized-benchmark-protocol.md).
+
+**Resultado G0.1: CONTINUAR.** Con `RelWithDebInfo`, 4 hilos y chunks de 30 s,
+tiny obtuvo RTF 0,153 y base 0,191, con primer texto de 1,26/2,66 s y térmica 0.
+G0 queda superada técnicamente; el siguiente gate es G1, sin confundir esta prueba
+offline con la validación incremental G2. Evidencia:
+[`doc/evidence/spike/g0-device-run-optimized-2026-07-28.md`](doc/evidence/spike/g0-device-run-optimized-2026-07-28.md).
+
 **Backlog prioritario**
 
 - P0. Crear proyecto Android mínimo en Kotlin/Compose con build reproducible.

@@ -28,6 +28,21 @@ android {
     buildFeatures {
         compose = true
     }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+        }
+        create("benchmark") {
+            initWith(getByName("release"))
+            matchingFallbacks += "release"
+            signingConfig = signingConfigs.getByName("debug")
+            // G0 evidence is extracted from app-private storage with adb run-as.
+            // Native dependencies still resolve to the optimized release variant.
+            isDebuggable = true
+            versionNameSuffix = "-benchmark"
+        }
+    }
 }
 
 dependencies {

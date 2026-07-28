@@ -53,6 +53,37 @@ class EvaluateDeviceGatesTest(unittest.TestCase):
         self.assertFalse(g0["approved"])
         self.assertEqual("ELIGIBLE_FOR_MANUAL_REVIEW", g2["status"])
 
+    def test_g0_selects_fastest_result_when_debug_and_benchmark_coexist(self):
+        device = dict(self.device)
+        verification = json.loads(json.dumps(self.verification))
+        verification["asr"].extend([
+            {
+                "modelId": "whisper-tiny-multilingual-q5_1",
+                "benchmarkConfigId": None,
+                "chunkCount": 16,
+                "realTimeFactor": 5.34,
+                "timeToFirstTextMs": 51_716,
+                "peakPssKb": 390_000,
+                "maximumThermalStatus": 1,
+            },
+            {
+                "modelId": "whisper-base-multilingual-q5_1",
+                "benchmarkConfigId": None,
+                "chunkCount": 16,
+                "realTimeFactor": 6.91,
+                "timeToFirstTextMs": 118_294,
+                "peakPssKb": 477_000,
+                "maximumThermalStatus": 0,
+            },
+        ])
+
+        g0 = MODULE.evaluate_g0(device, verification)
+
+        self.assertTrue(g0["automaticThresholdsMet"])
+        selected = {item["modelId"]: item for item in g0["selectedAsrResults"]}
+        self.assertEqual(0.8, selected["whisper-tiny-multilingual-q5_1"]["realTimeFactor"])
+        self.assertEqual(1.1, selected["whisper-base-multilingual-q5_1"]["realTimeFactor"])
+
     def test_wrong_device_blocks_all_gates(self):
         device = {"productModel": "Pixel 10", "productDevice": "mustang"}
 

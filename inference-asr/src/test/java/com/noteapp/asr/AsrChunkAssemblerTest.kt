@@ -35,6 +35,22 @@ class AsrChunkAssemblerTest {
         assertEquals(2, result.size)
     }
 
+    @Test
+    fun `benchmark configuration controls chunk duration`() {
+        val config = AsrLabConfig(threadCount = 6, maxChunkMs = 10_000)
+        val result = AsrChunkAssembler.assemble(listOf(interval(0, 25_000)), config)
+
+        assertEquals("t6-c10s", config.id)
+        assertEquals(3, result.size)
+        assertTrue(result.all { it.endMs - it.startMs <= 10_000 })
+        assertEquals(9_500, result[1].startMs)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `rejects invalid benchmark configuration`() {
+        AsrLabConfig(threadCount = 0)
+    }
+
     private fun interval(startMs: Long, endMs: Long) = SpeechInterval(
         startMs,
         endMs,

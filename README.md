@@ -13,7 +13,9 @@ La implementación sigue [PLAN_DE_SPRINTS.md](PLAN_DE_SPRINTS.md), con
   [`PLAN_DE_SPRINTS.md`](PLAN_DE_SPRINTS.md) y consultar
   [`doc/DocMaster.md`](doc/DocMaster.md) cuando el plan remita a decisiones de producto.
 - La ejecución física más reciente y su decisión están en
-  [`doc/evidence/spike/g0-device-run-2026-07-22.md`](doc/evidence/spike/g0-device-run-2026-07-22.md).
+  [`doc/evidence/spike/g0-device-run-optimized-2026-07-28.md`](doc/evidence/spike/g0-device-run-optimized-2026-07-28.md).
+- El protocolo reproducible de la build optimizada está en
+  [`doc/evidence/spike/g0-optimized-benchmark-protocol.md`](doc/evidence/spike/g0-optimized-benchmark-protocol.md).
 
 ## Requisitos
 
@@ -28,9 +30,10 @@ En PowerShell:
 .\gradlew.bat build lint test
 ```
 
-La primera fase es el spike técnico. G0 se ejecutó físicamente el 22 de julio de
-2026 y quedó en **AJUSTAR**: captura y VAD fueron íntegros, pero tiny/base CPU-only
-obtuvieron RTF 5,34 y 6,91, lejos del objetivo cercano a 1.
+La primera fase es el spike técnico. La medición debug inicial quedó en
+**AJUSTAR**, pero la auditoría descubrió ggml sin optimización. G0.1 repitió el
+mismo audio con la variante `benchmark`: tiny/base obtuvieron RTF 0,153/0,191 y
+la decisión técnica cambió a **CONTINUAR**.
 
 La build actual captura PCM16 mono mediante un foreground service y permite comparar
 16 kHz directo con 48 kHz normalizado a 16 kHz. Guarda segmentos privados con

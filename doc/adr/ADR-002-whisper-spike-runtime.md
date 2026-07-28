@@ -1,7 +1,7 @@
 # ADR-002: Runtime Whisper provisional para el spike
 
-- Estado: rechazado para tiempo real en su configuración actual; G0 = AJUSTAR
-- Fecha: 2026-07-22
+- Estado: aceptado provisionalmente para continuar; G0 superada
+- Fecha: 2026-07-28
 
 ## Contexto
 
@@ -64,3 +64,28 @@ Ambos modelos completaron sin servicios remotos ni fallo de integración, pero
 incumplen ampliamente el RTF cercano a 1. G0 queda en **AJUSTAR**. El runtime
 CPU-only actual puede conservarse como referencia offline, pero no se adopta como
 ASR incremental del producto hasta optimizarlo o comparar un backend alternativo.
+
+## Corrección de validez del benchmark
+
+La auditoría del 2026-07-28 comprobó en el `build.ninja` arm64 que la APK debug
+usada en G0 compiló `ggml-base` y `ggml-cpu` sin `-O2/-O3`. El `-O3` declarado
+afectaba solamente al wrapper `noteapp_whisper` y sólo en configuraciones release.
+Por lo tanto, los RTF 5,34/6,91 prueban integración y un límite debug, pero no
+permiten rechazar todavía el rendimiento nativo de producción.
+
+Se crea una variante `benchmark`, firmada para laboratorio y con acceso `run-as`,
+que resuelve `inference-asr` contra `RelWithDebInfo`. La preparación automatizada
+exige `ggml-cpu -O2 -DNDEBUG` y wrapper JNI `-O3 -DNDEBUG`. G0 permanece en
+**AJUSTAR** hasta repetir tiny/base y registrar una nueva decisión.
+
+## Resultado de revalidación
+
+La repetición física con `RelWithDebInfo`, 4 hilos y chunks de 30 s obtuvo:
+
+- tiny q5_1: RTF 0,153, primer texto 1.264 ms y térmica 0;
+- base q5_1: RTF 0,191, primer texto 2.655 ms y térmica 0.
+
+G0 cambia a **CONTINUAR**. Tiny queda como primer candidato incremental y base como
+candidato de refinamiento final, sujetos a calidad/WER de Sprint 2 y sostenibilidad
+incremental de G2. El barrido de hilos/chunks permanece como optimización posterior,
+no como condición para G1.

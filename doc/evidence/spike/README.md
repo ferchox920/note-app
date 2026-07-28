@@ -1,8 +1,9 @@
 # Evidencia del spike técnico
 
-G0 se cerró en **AJUSTAR** sobre un Galaxy S25 Ultra físico. La sesión autorizada
-validó captura/VAD sin pérdidas, pero tiny/base CPU-only midieron RTF 5,34/6,91.
-La ficha sanitizada enlazada al final contiene la decisión y las métricas.
+G0 quedó **superada técnicamente** sobre un Galaxy S25 Ultra físico. La sesión
+autorizada validó captura/VAD sin pérdidas y la revalidación optimizada midió RTF
+0,153/0,191 para tiny/base. La medición debug 5,34/6,91 se conserva como evidencia
+histórica del defecto de build.
 
 ## Configuración base
 
@@ -140,7 +141,7 @@ No incluir audio, transcripciones ni notas sensibles en logs o fixtures.
 - Cola de inferencia acotada a dos ventanas y contador de descartes oldest-first.
 - Reconciliador conserva el prefijo estable y deja al menos una palabra provisional.
 - Este primer corte se verificó antes de conectarlo a captura; la integración se
-  registra en el incremento siguiente. G0/G1 siguen pendientes y G2 debe medirse según
+  registra en el incremento siguiente. En ese momento G0/G1 seguían pendientes y G2 debía medirse según
   [`../sprint-3/incremental-transcription-protocol.md`](../sprint-3/incremental-transcription-protocol.md).
 
 ## Integración incremental en foreground service (2026-07-21)
@@ -188,5 +189,7 @@ No incluir audio, transcripciones ni notas sensibles en logs o fixtures.
 - La sesión final duró 6:18: tres PCM, 12.108.800 bytes, 127 segmentos VAD, cero
   errores de lectura, cero discontinuidades y checksums válidos.
 - Tiny produjo RTF 5,34 y base RTF 6,91 sobre los mismos 357 s de audio VAD.
-- Decisión G0: **AJUSTAR** el runtime/configuración ASR antes de G1/G2.
+- Decisión inicial G0: **AJUSTAR**; la revalidación optimizada posterior cambió la
+  decisión técnica a **CONTINUAR**.
 - Ficha sanitizada de la ejecución: [`g0-device-run-2026-07-22.md`](g0-device-run-2026-07-22.md).
+- Revalidación optimizada: [`g0-device-run-optimized-2026-07-28.md`](g0-device-run-optimized-2026-07-28.md).

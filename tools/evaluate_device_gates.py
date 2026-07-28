@@ -52,8 +52,18 @@ def result(name: str, checks: dict[str, bool], manual_review: list[str]) -> dict
 
 
 def evaluate_g0(device: dict, verification: dict) -> dict[str, object]:
-    asr_by_model = {item["modelId"]: item for item in verification.get("asr", [])}
-    required = [asr_by_model.get(TINY_MODEL), asr_by_model.get(BASE_MODEL)]
+    asr_results = verification.get("asr", [])
+
+    def best_result(model_id: str) -> dict | None:
+        candidates = [
+            item for item in asr_results
+            if item.get("modelId") == model_id
+            and item.get("chunkCount", 0) > 0
+            and item.get("realTimeFactor") is not None
+        ]
+        return min(candidates, key=lambda item: item["realTimeFactor"], default=None)
+
+    required = [best_result(TINY_MODEL), best_result(BASE_MODEL)]
     valid_required = [item for item in required if item is not None]
     checks = {
         "s25Ultra": is_s25_ultra(device),
@@ -67,7 +77,7 @@ def evaluate_g0(device: dict, verification: dict) -> dict[str, object]:
             for item in valid_required
         ),
     }
-    return result(
+    evaluation = result(
         "G0",
         checks,
         [
@@ -76,6 +86,16 @@ def evaluate_g0(device: dict, verification: dict) -> dict[str, object]:
             "Revisar temperatura, throttling y cualquier incidente observado.",
         ],
     )
+    evaluation["selectedAsrResults"] = [
+        {
+            "modelId": item["modelId"],
+            "benchmarkConfigId": item.get("benchmarkConfigId"),
+            "realTimeFactor": item["realTimeFactor"],
+            "timeToFirstTextMs": item.get("timeToFirstTextMs"),
+        }
+        for item in valid_required
+    ]
+    return evaluation
 
 
 def evaluate_g1(device: dict, verification: dict) -> dict[str, object]:

@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <string>
 
+#ifndef NOTEAPP_NATIVE_BUILD_TYPE
+#define NOTEAPP_NATIVE_BUILD_TYPE "unknown"
+#endif
+
 namespace {
 
 whisper_context * context_from(jlong pointer) {
@@ -182,5 +186,9 @@ Java_com_noteapp_asr_WhisperNative_nativeTimings(JNIEnv * env, jobject, jlong po
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_noteapp_asr_WhisperNative_nativeSystemInfo(JNIEnv * env, jobject) {
-    return new_utf8_string(env, whisper_print_system_info());
+    std::string info = "build_type=";
+    info += NOTEAPP_NATIVE_BUILD_TYPE;
+    info += "; ";
+    info += whisper_print_system_info();
+    return new_utf8_string(env, info.c_str());
 }
