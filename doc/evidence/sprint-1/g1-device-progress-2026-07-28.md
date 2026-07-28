@@ -87,10 +87,26 @@ El arnés reproducible está en `tools/run-g1-notification-case.ps1`.
 - `python -m unittest discover -s tools/tests`: 27 pruebas aprobadas.
 - Instalación física de la APK corregida: aprobada.
 
+## Caso C — intento sin estímulo de llamada
+
+Se preparó una sesión nueva y el observador publicó `CALL_WINDOW_READY` después
+de superar 60 segundos de audio previo. Durante los 300 segundos configurados no
+se observó ninguna transición de telefonía: las dos suscripciones permanecieron
+en estado `IDLE`.
+
+- Sesión: `de478705-b654-44db-b819-2b0ce950d79f`.
+- Duración final: 379.720 ms.
+- PCM: 12.151.040 bytes.
+- Lectura: 0 errores, 0 discontinuidades y 0 frames estimados perdidos.
+- Cierre: controlado mediante `adb-harness`.
+
+La sesión se recolectó y verificó para demostrar que el timeout del arnés no deja
+el micrófono activo. **No cuenta como caso C**, porque no existió una llamada real.
+
 ## Trabajo restante antes de cerrar G1
 
-1. Ejecutar el caso C con una llamada real y confirmar recuperación explícita sin
-   corrupción.
+1. Repetir el caso C cuando haya otro teléfono disponible, atender la llamada
+   durante 15–30 segundos y confirmar recuperación explícita sin corrupción.
 2. Repetir el caso A hasta 90 minutos útiles y 80 minutos de pantalla apagada si
    se desea superar estrictamente la puerta G1.
 3. Ejecutar la matriz conjunta y emitir la decisión manual final.
