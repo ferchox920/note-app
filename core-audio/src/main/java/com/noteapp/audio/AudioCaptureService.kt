@@ -65,6 +65,7 @@ class AudioCaptureService : Service() {
     private var captureJob: Job? = null
     @Volatile private var audioRecord: AudioRecord? = null
     @Volatile private var stoppingCapture = false
+    private var foregroundStarted = false
     private var terminal = false
     private var nextCheckpointAtBytes = CHECKPOINT_INTERVAL_BYTES
     private var captureMetrics = AudioCaptureMetrics()
@@ -713,17 +714,21 @@ class AudioCaptureService : Service() {
 
     private fun startInForeground(content: String, paused: Boolean) {
         val notification = createNotification(content, paused)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (foregroundStarted) {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            foregroundStarted = true
         } else {
             startForeground(NOTIFICATION_ID, notification)
+            foregroundStarted = true
         }
     }
 
     private fun createNotification(content: String, paused: Boolean): Notification {
         val toggleAction = if (paused) ACTION_RESUME else ACTION_PAUSE
         val toggleLabel = if (paused) R.string.recording_action_resume else R.string.recording_action_pause
-        return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        val builder = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(com.noteapp.audio.R.drawable.ic_recording_notification)
             .setContentTitle(getString(R.string.recording_notification_title))
             .setContentText(content)
@@ -743,7 +748,10 @@ class AudioCaptureService : Service() {
                     servicePendingIntent(ACTION_COMPLETE, 3),
                 ).build(),
             )
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
     }
 
     private fun servicePendingIntent(action: String, requestCode: Int): PendingIntent {
