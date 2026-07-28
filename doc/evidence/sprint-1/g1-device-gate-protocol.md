@@ -54,7 +54,9 @@ APK y espacio libre. El audio y los checkpoints completos permanecen en
 5. Entre los minutos 60 y 65, abrir otra app durante un minuto sin cerrar Note App;
    comprobar que la notificación continúa y volver a apagar la pantalla.
 6. Al superar 90 minutos de audio útil, tocar **Finalizar** y confirmar en el
-   diálogo. El paso de confirmación evita cierres accidentales.
+   diálogo. En una ejecución desatendida se permite `ACTION_COMPLETE` desde el
+   arnés después de comprobar el umbral, con origen inmutable `adb-harness`. El
+   diálogo sigue siendo obligatorio para el cierre desde UI y evita accidentes.
 7. Exigir estado `COMPLETED`, duración de al menos 5.400.000 ms, cero errores de
    lectura, cero discontinuidades y cero frames estimados perdidos.
 
