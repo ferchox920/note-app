@@ -143,6 +143,7 @@ python .\tools\evaluate_g1_capture.py `
   --monitor-jsonl <monitor>\samples.jsonl `
   --timed-actions-jsonl <monitor>\timed-actions.jsonl `
   --notification-evidence <monitor>\pause-notification-sanitized.json `
+  --background-evidence <monitor>\background-notification-sanitized.json `
   --output <monitor>\case-a-evaluation.json `
   --fail-on-automatic-check
 ```

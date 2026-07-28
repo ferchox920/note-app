@@ -87,9 +87,24 @@ class EvaluateG1CaptureTest(unittest.TestCase):
             "resumeActionPresent": True,
             "finishActionPresent": True,
         }
+        self.background = {
+            "notificationPresent": True,
+            "serviceForeground": True,
+            "sessionStatus": "RECORDING",
+            "durationMs": 3_605_000,
+            "text": "Grabación en curso",
+            "pauseActionPresent": True,
+            "finishActionPresent": True,
+        }
 
     def test_accepts_complete_case_a_evidence(self):
-        report = evaluate(self.verification, self.samples, self.actions, self.notification)
+        report = evaluate(
+            self.verification,
+            self.samples,
+            self.actions,
+            self.notification,
+            self.background,
+        )
 
         self.assertTrue(report["automaticThresholdsMet"])
         self.assertEqual(5_400_000, report["metrics"]["screenOffObservedMs"])
@@ -100,12 +115,20 @@ class EvaluateG1CaptureTest(unittest.TestCase):
         self.actions.append({"action": "RUNNER_ERROR", "durationMs": 0, "result": "adb failed"})
         self.notification["resumeActionPresent"] = False
 
-        report = evaluate(self.verification, self.samples, self.actions, self.notification)
+        self.background["serviceForeground"] = False
+        report = evaluate(
+            self.verification,
+            self.samples,
+            self.actions,
+            self.notification,
+            self.background,
+        )
 
         self.assertFalse(report["automaticThresholdsMet"])
         self.assertFalse(report["automaticChecks"]["monitorStayedHealthy"])
         self.assertFalse(report["automaticChecks"]["runnerReached90MinutesWithoutErrors"])
         self.assertFalse(report["automaticChecks"]["pausedNotificationReflectedState"])
+        self.assertFalse(report["automaticChecks"]["backgroundNotificationRemainedActive"])
 
     def test_does_not_count_large_monitor_gaps(self):
         start = datetime(2026, 7, 28, tzinfo=timezone.utc)

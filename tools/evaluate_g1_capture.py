@@ -51,6 +51,7 @@ def evaluate(
     monitor_samples: list[dict],
     timed_actions: list[dict],
     notification_evidence: dict,
+    background_evidence: dict,
 ) -> dict:
     lifecycle_names = set(verification.get("lifecycle", {}).get("eventNames", []))
     pcm = verification.get("pcm", {})
@@ -120,6 +121,15 @@ def evaluate(
             and int(background_verified.get("durationMs", 0)) - int(background.get("durationMs", 0)) >= 60_000
             and background_verified.get("result") == "RECORDING"
         ),
+        "backgroundNotificationRemainedActive": (
+            background_evidence.get("notificationPresent") is True
+            and background_evidence.get("serviceForeground") is True
+            and background_evidence.get("sessionStatus") == "RECORDING"
+            and 60 * 60 * 1_000 <= int(background_evidence.get("durationMs", -1)) <= 65 * 60 * 1_000
+            and background_evidence.get("text") == "Grabación en curso"
+            and background_evidence.get("pauseActionPresent") is True
+            and background_evidence.get("finishActionPresent") is True
+        ),
         "runnerReached90MinutesWithoutErrors": (
             ninety_minutes is not None
             and int(ninety_minutes.get("durationMs", 0)) >= 90 * 60 * 1_000
@@ -155,6 +165,7 @@ def main() -> int:
     parser.add_argument("--monitor-jsonl", required=True, type=Path)
     parser.add_argument("--timed-actions-jsonl", required=True, type=Path)
     parser.add_argument("--notification-evidence", required=True, type=Path)
+    parser.add_argument("--background-evidence", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--fail-on-automatic-check", action="store_true")
     args = parser.parse_args()
@@ -164,6 +175,7 @@ def main() -> int:
         read_jsonl(args.monitor_jsonl),
         read_jsonl(args.timed_actions_jsonl),
         json.loads(args.notification_evidence.read_text(encoding="utf-8-sig")),
+        json.loads(args.background_evidence.read_text(encoding="utf-8-sig")),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
