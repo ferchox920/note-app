@@ -127,13 +127,19 @@ offline con la validación incremental G2. Evidencia:
 
 **Meta:** establecer la arquitectura mínima y grabar 90 minutos de forma estable, incluso con pantalla apagada.
 
-**Estado al 2026-07-28: EN VALIDACIÓN FÍSICA.** La implementación ya contiene
+**Estado al 2026-07-28: EN VALIDACIÓN FÍSICA (resultado parcial: AJUSTAR).** La implementación ya contiene
 foreground service de micrófono, estados de sesión, pausa/reanudación, checkpoint
 atómico cada 10 s, segmentos PCM con SHA-256, recuperación de segmento huérfano y
 métricas de lectura/discontinuidad. Cada transición queda además en un diario
 técnico inmutable con secuencia, duración y origen del comando, sin contenido
 sensible. G1 se valida con tres casos separados: 90 min
 con pantalla apagada, cierre forzado recuperable e interrupción por llamada.
+La ejecución larga actual terminó íntegra a los 72,59 min, por decisión manual,
+por lo que no satisface todavía 90 min/80 min de pantalla apagada. El defecto de
+notificación encontrado en background fue corregido y su regresión física pasó;
+el caso B de cierre forzado y recuperación también pasó sin modificar segmentos
+previos. El caso C y la repetición estricta de A siguen pendientes. Avance:
+[`doc/evidence/sprint-1/g1-device-progress-2026-07-28.md`](doc/evidence/sprint-1/g1-device-progress-2026-07-28.md).
 Protocolo:
 [`doc/evidence/sprint-1/g1-device-gate-protocol.md`](doc/evidence/sprint-1/g1-device-gate-protocol.md).
 Auditoría de preparación:
