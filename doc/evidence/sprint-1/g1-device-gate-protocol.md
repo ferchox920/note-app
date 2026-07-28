@@ -156,3 +156,19 @@ G1 solo se aprueba si el caso A cumple 90 minutos sin pérdida/corrupción, el c
 recupera sin sobrescritura y los tres casos dejan un resultado reproducible. Un
 fallo en llamada puede ser aceptable únicamente si se informa y permite recuperar
 la sesión sin corrupción; un hueco no contabilizado bloquea la puerta.
+
+Tras recolectar los tres casos, ejecutar la evaluación conjunta:
+
+```powershell
+python .\tools\evaluate_g1_matrix.py `
+  --case-a-evaluation <monitor-A>\case-a-evaluation.json `
+  --case-b-evidence <device-session-B> `
+  --case-b-summary <recovery-B>\recovery-case-summary.json `
+  --case-c-evidence <device-session-C> `
+  --case-c-summary <call-C>\call-case-summary.json `
+  --output .\artifacts\private\g1-matrix-evaluation.json `
+  --fail-on-automatic-check
+```
+
+La salida automática solo puede declarar `ELIGIBLE_FOR_MANUAL_REVIEW`; la decisión
+final `CONTINUAR`, `AJUSTAR` o `DETENER` debe quedar en el informe sanitizado.
