@@ -91,6 +91,10 @@ El arnés no inicia llamadas, no lee números y no captura audio telefónico. Tr
 15–30 s y colgar. Si la app queda en `RECOVERING`, abre Note App y espera hasta
 cinco minutos a que el usuario desbloquee, revise el motivo y toque **Reanudar**.
 
+Si no entra ninguna llamada antes del timeout, el arnés cierra y recolecta la
+sesión de espera, escribe `NO_INCOMING_CALL_OBSERVED` y termina con error. Esa
+ejecución no cuenta como caso C y nunca debe dejar el micrófono activo.
+
 1. Iniciar una sesión nueva, apagar la pantalla y grabar al menos 60 segundos.
 2. Recibir una llamada de prueba, atender durante 15–30 segundos y finalizarla.
 3. Registrar el estado observado: continuidad automática, error recuperable o

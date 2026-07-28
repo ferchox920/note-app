@@ -7,6 +7,7 @@ param(
     [int]$MinimumPreCallSeconds = 60,
     [int]$MinimumPostCallSeconds = 60,
     [int]$CallStartTimeoutSeconds = 300,
+    [int]$CallEndTimeoutSeconds = 180,
     [int]$RecoveryTimeoutSeconds = 300,
     [switch]$Execute
 )
@@ -123,9 +124,13 @@ $callStates = [System.Collections.Generic.List[object]]::new()
 $callStartedAt = $null
 $callAnsweredAt = $null
 $callEndedAt = $null
+$callEndDeadline = $null
 $previousState = 0
 $callDeadline = (Get-Date).AddSeconds($CallStartTimeoutSeconds)
-while ((Get-Date) -lt $callDeadline -or $null -ne $callStartedAt) {
+while (
+    ($null -eq $callStartedAt -and (Get-Date) -lt $callDeadline) -or
+    ($null -ne $callStartedAt -and (Get-Date) -lt $callEndDeadline)
+) {
     $state = Read-CallState
     if ($state -ne $previousState) {
         $observedAt = (Get-Date).ToUniversalTime()
@@ -135,6 +140,7 @@ while ((Get-Date) -lt $callDeadline -or $null -ne $callStartedAt) {
         })
         if ($previousState -eq 0 -and $state -ne 0 -and $null -eq $callStartedAt) {
             $callStartedAt = $observedAt
+            $callEndDeadline = (Get-Date).AddSeconds($CallEndTimeoutSeconds)
         }
         if ($state -eq 2 -and $null -eq $callAnsweredAt) {
             $callAnsweredAt = $observedAt
@@ -147,7 +153,57 @@ while ((Get-Date) -lt $callDeadline -or $null -ne $callStartedAt) {
     }
     Start-Sleep -Seconds 1
 }
-if ($null -eq $callStartedAt) { throw "No incoming call was observed before timeout." }
+if ($null -eq $callStartedAt) {
+    $checkpointBeforeCleanup = Read-Checkpoint
+    if ($checkpointBeforeCleanup.status -in @("RECORDING", "PAUSED")) {
+        Send-ServiceCommand -Action "COMPLETE"
+        $finalCheckpoint = Wait-ForStatus -ExpectedStatus "COMPLETED"
+    } else {
+        $finalCheckpoint = $checkpointBeforeCleanup
+    }
+    $collectionStartedAt = Get-Date
+    & (Join-Path $scriptDirectory "collect-device-session.ps1") `
+        -Adb $Adb `
+        -Serial $Serial `
+        -SessionId $SessionId `
+        -RequireLifecycleEvent STARTED,COMPLETED
+    if ($LASTEXITCODE -ne 0) {
+        throw "No call was observed and private cleanup collection failed."
+    }
+    $deviceSessionsRoot = Join-Path $projectDirectory "artifacts\private\device-sessions"
+    $collectedDirectory = Get-ChildItem -LiteralPath $deviceSessionsRoot -Directory |
+        Where-Object {
+            $_.Name -like "$SessionId-*" -and
+            $_.LastWriteTime -ge $collectionStartedAt.AddSeconds(-2)
+        } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    $report = [ordered]@{
+        schemaVersion = 1
+        case = "G1-C"
+        sessionId = $SessionId
+        executedAt = (Get-Date).ToUniversalTime().ToString("o")
+        attemptOutcome = "NO_INCOMING_CALL_OBSERVED"
+        callStartTimeoutSeconds = $CallStartTimeoutSeconds
+        callStates = $callStates
+        answeredCallDurationSeconds = 0
+        statusAfterCall = "NOT_OBSERVED"
+        interruptionErrorCode = $null
+        recoveryRequired = $false
+        preCallDurationMs = [long]$preCallCheckpoint.durationMs
+        postCallDurationMs = 0
+        finalDurationMs = [long]$finalCheckpoint.durationMs
+        finalReadErrorCount = [int]$finalCheckpoint.readErrorCount
+        finalDiscontinuityCount = [int]$finalCheckpoint.discontinuityCount
+        finalEstimatedMissingFrames = [long]$finalCheckpoint.estimatedMissingFrames
+        evidenceDirectory = $collectedDirectory
+        contentIncluded = $false
+    }
+    $reportPath = Join-Path $outputDirectory "call-case-summary.json"
+    $report | ConvertTo-Json -Depth 6 |
+        Set-Content -LiteralPath $reportPath -Encoding utf8
+    throw "No incoming call was observed before timeout. The session was closed and collected safely at $reportPath."
+}
 if ($null -eq $callAnsweredAt) { throw "The call rang but was not observed in off-hook/active state." }
 if ($null -eq $callEndedAt) { throw "The call did not return to idle state." }
 $answeredDurationSeconds = ($callEndedAt - $callAnsweredAt).TotalSeconds
