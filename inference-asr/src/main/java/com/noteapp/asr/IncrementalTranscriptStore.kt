@@ -1,14 +1,10 @@
 package com.noteapp.asr
 
+import com.noteapp.security.SessionArtifactStore
 import kotlinx.collections.immutable.toPersistentList
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
-import java.io.RandomAccessFile
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 data class IncrementalTranscriptDocument(
     val modelId: String,
@@ -16,14 +12,16 @@ data class IncrementalTranscriptDocument(
     val state: IncrementalAsrState,
 )
 
-class IncrementalTranscriptStore {
+class IncrementalTranscriptStore(
+    private val artifactStore: SessionArtifactStore,
+) {
     fun read(sessionDirectory: File): IncrementalAsrState? =
         readDocument(sessionDirectory)?.state
 
     fun readDocument(sessionDirectory: File): IncrementalTranscriptDocument? {
         val file = File(sessionDirectory, FILE_NAME)
         if (!file.isFile) return null
-        val json = JSONObject(file.readText(Charsets.UTF_8))
+        val json = JSONObject(artifactStore.readText(file))
         val jsonSegments = json.optJSONArray("segments") ?: JSONArray()
         val segments = List(jsonSegments.length()) { index ->
             val item = jsonSegments.getJSONObject(index)
@@ -39,7 +37,7 @@ class IncrementalTranscriptStore {
                 expectedCount = json.getInt("metricCount"),
             )
         } else {
-            Files.deleteIfExists(File(sessionDirectory, JOURNAL_FILE_NAME).toPath())
+            artifactStore.delete(File(sessionDirectory, JOURNAL_FILE_NAME))
             val jsonMetrics = json.optJSONArray("inferenceMetrics") ?: JSONArray()
             List(jsonMetrics.length()) { index ->
                 metricFromJson(jsonMetrics.getJSONObject(index))
@@ -71,7 +69,7 @@ class IncrementalTranscriptStore {
     fun persistedMetricCount(sessionDirectory: File): Int {
         val file = File(sessionDirectory, FILE_NAME)
         if (!file.isFile) return 0
-        val json = JSONObject(file.readText(Charsets.UTF_8))
+        val json = JSONObject(artifactStore.readText(file))
         return if (json.optString("metricsJournalFile") == JOURNAL_FILE_NAME) {
             json.optInt("metricCount", 0)
         } else {
@@ -91,10 +89,9 @@ class IncrementalTranscriptStore {
         }
         val journal = File(sessionDirectory, JOURNAL_FILE_NAME)
         if (persistedMetricCount == 0 && journal.isFile) {
-            RandomAccessFile(journal, "rw").use { it.setLength(0) }
+            check(artifactStore.delete(journal)) { "INCREMENTAL_JOURNAL_DELETE_FAILED" }
         }
-        val journalExisted = journal.isFile
-        val journalLength = if (journalExisted) journal.length() else 0L
+        val previousJournal = journal.takeIf(File::isFile)?.let(artifactStore::readBytes)
         return try {
             appendMetrics(
                 sessionDirectory,
@@ -111,10 +108,10 @@ class IncrementalTranscriptStore {
             )
             updatedMetricCount
         } catch (failure: Exception) {
-            if (journalExisted) {
-                RandomAccessFile(journal, "rw").use { it.setLength(journalLength) }
+            if (previousJournal != null) {
+                artifactStore.writeBytesAtomically(journal, previousJournal)
             } else {
-                journal.delete()
+                artifactStore.delete(journal)
             }
             throw failure
         }
@@ -142,7 +139,7 @@ class IncrementalTranscriptStore {
             includeMetrics = true,
             journalMetricCount = null,
         )
-        Files.deleteIfExists(File(sessionDirectory, JOURNAL_FILE_NAME).toPath())
+        artifactStore.delete(File(sessionDirectory, JOURNAL_FILE_NAME))
     }
 
     /** Writes a self-contained final artifact for lab runners and compatibility. */
@@ -212,18 +209,7 @@ class IncrementalTranscriptStore {
     }
 
     private fun atomicWriteText(target: File, content: String) {
-        val temporary = File(target.parentFile, "${target.name}.tmp")
-        temporary.writeText(content, Charsets.UTF_8)
-        try {
-            Files.move(
-                temporary.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        artifactStore.writeTextAtomically(target, content)
     }
 
     private fun readJournal(
@@ -233,13 +219,15 @@ class IncrementalTranscriptStore {
         require(expectedCount >= 0) { "Incremental metric count must not be negative" }
         val journal = File(sessionDirectory, JOURNAL_FILE_NAME)
         if (expectedCount == 0) {
-            Files.deleteIfExists(journal.toPath())
+            artifactStore.delete(journal)
             return emptyList()
         }
         require(journal.isFile) { "Missing incremental metric journal" }
-        val retainedLines = journal.useLines { lines ->
-            lines.take(expectedCount + 1).toList()
-        }
+        val retainedLines = artifactStore.readText(journal)
+            .lineSequence()
+            .filter(String::isNotBlank)
+            .take(expectedCount + 1)
+            .toList()
         require(retainedLines.size >= expectedCount) { "Incremental metric journal is truncated" }
         if (retainedLines.size > expectedCount) {
             atomicWriteText(
@@ -262,15 +250,10 @@ class IncrementalTranscriptStore {
     ) {
         if (metrics.isEmpty()) return
         val journal = File(sessionDirectory, JOURNAL_FILE_NAME)
-        FileOutputStream(journal, true).use { output ->
-            val writer = output.bufferedWriter(Charsets.UTF_8)
-            metrics.forEach { metric ->
-                writer.append(metricToJson(metric).toString())
-                writer.newLine()
-            }
-            writer.flush()
-            output.fd.sync()
+        val content = metrics.joinToString(separator = "\n", postfix = "\n") { metric ->
+            metricToJson(metric).toString()
         }
+        artifactStore.appendBytes(journal, content.toByteArray(Charsets.UTF_8))
     }
 
     private fun metricToJson(metric: IncrementalInferenceMetric): JSONObject =

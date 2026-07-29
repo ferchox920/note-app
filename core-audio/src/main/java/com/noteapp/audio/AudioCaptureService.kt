@@ -31,6 +31,8 @@ import com.noteapp.asr.SherpaStreamingModelCatalog
 import com.noteapp.asr.WhisperEngine
 import com.noteapp.asr.WhisperModelCatalog
 import com.noteapp.domain.SessionStatus
+import com.noteapp.security.AndroidKeystoreSessionArtifactStore
+import com.noteapp.security.SessionArtifactStore
 import com.noteapp.vad.VadSegmenter
 import com.noteapp.vad.VadProcessingResult
 import com.noteapp.vad.VadSpeechSegment
@@ -62,7 +64,8 @@ class AudioCaptureService : Service() {
 
     private var writer: AudioSessionWriter? = null
     private var vadSegmenter: VadSegmenter? = null
-    private val vadTimelineStore = VadTimelineStore()
+    private lateinit var artifactStore: SessionArtifactStore
+    private lateinit var vadTimelineStore: VadTimelineStore
     private val vadSegments = mutableListOf<VadSpeechSegment>()
     private var speechDetected = false
     private var vadErrorCode: String? = null
@@ -80,10 +83,13 @@ class AudioCaptureService : Service() {
     @Volatile private var incrementalState = IncrementalAsrState(enabled = false)
     private var incrementalModelId: String? = null
     private var incrementalPersistedMetricCount = 0
-    private val incrementalTranscriptStore = IncrementalTranscriptStore()
+    private lateinit var incrementalTranscriptStore: IncrementalTranscriptStore
 
     override fun onCreate() {
         super.onCreate()
+        artifactStore = AndroidKeystoreSessionArtifactStore.create(this)
+        vadTimelineStore = VadTimelineStore(artifactStore)
+        incrementalTranscriptStore = IncrementalTranscriptStore(artifactStore)
         createNotificationChannel()
     }
 
@@ -138,6 +144,7 @@ class AudioCaptureService : Service() {
             fail(ERROR_PERMISSION_DENIED)
             return
         }
+        artifactStore.migrateAll()
         terminal = false
         captureMetrics = AudioCaptureMetrics()
         capturePipeline = requestedPipeline
@@ -148,6 +155,7 @@ class AudioCaptureService : Service() {
             format = format,
             capturePipeline = capturePipeline,
             incrementalModelId = requestedIncrementalModelId,
+            artifactStore = artifactStore,
         )
         vadSegments.clear()
         speechDetected = false
@@ -177,10 +185,12 @@ class AudioCaptureService : Service() {
         }
         terminal = false
         try {
+            artifactStore.migrateAll()
             val recoveredWriter = AudioSessionWriter.recover(
                 rootDirectory = File(filesDir, RECORDINGS_DIRECTORY),
                 sessionId = sessionId,
                 expectedFormat = format,
+                artifactStore = artifactStore,
             )
             writer = recoveredWriter
             recoveredWriter.writeLifecycleEvent(
@@ -394,7 +404,7 @@ class AudioCaptureService : Service() {
             logicalOffset = segmentEnd
             if (segmentEnd <= startByteOffset) return@forEach
             val file = File(recoveredWriter.sessionDirectory, metadata.fileName)
-            file.inputStream().buffered().use { input ->
+            artifactStore.openInput(file).buffered().use { input ->
                 var bytesToSkip = maxOf(0L, startByteOffset - segmentStart)
                 while (bytesToSkip > 0) {
                     val skipped = input.skip(bytesToSkip)

@@ -1,20 +1,20 @@
 package com.noteapp.vad
 
+import com.noteapp.security.SessionArtifactStore
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 data class VadTimeline(
     val processedDurationMs: Long,
     val segments: List<VadSpeechSegment>,
 )
 
-class VadTimelineStore {
+class VadTimelineStore(
+    private val artifactStore: SessionArtifactStore,
+) {
     fun read(sessionDirectory: File): VadTimeline {
         val file = File(sessionDirectory, FILE_NAME)
         if (!file.isFile) return VadTimeline(0, emptyList())
-        val json = file.readText(Charsets.UTF_8)
+        val json = artifactStore.readText(file)
         val processedDurationMs = numericField(json, "processedDurationMs")
         val body = Regex("\\\"segments\\\":\\[(.*)]}").find(json)?.groupValues?.get(1).orEmpty()
         val segments = if (body.isBlank()) emptyList() else Regex("\\{[^{}]+}")
@@ -50,18 +50,7 @@ class VadTimelineStore {
         }
         val json = """{"schemaVersion":1,"sessionId":"$sessionId","engine":"$engine","capturePipelineId":"$capturePipelineId","sampleRateHz":16000,"frameSizeSamples":$frameSizeSamples,"frameDurationMs":$frameDurationMs,"mode":"$mode","minimumSpeechMs":60,"hangoverMs":300,"preRollMs":200,"processedDurationMs":$processedDurationMs,"segments":[$segmentJson]}"""
         val target = File(sessionDirectory, fileName)
-        val temporary = File(sessionDirectory, "$fileName.tmp")
-        temporary.writeText(json, Charsets.UTF_8)
-        try {
-            Files.move(
-                temporary.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        artifactStore.writeTextAtomically(target, json)
     }
 
     companion object {

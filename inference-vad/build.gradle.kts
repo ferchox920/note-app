@@ -14,6 +14,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core-security"))
     implementation(libs.android.vad.webrtc)
     implementation(libs.android.vad.silero)
     // Keep Silero's Java/JNI binding on the same ONNX Runtime ABI used by

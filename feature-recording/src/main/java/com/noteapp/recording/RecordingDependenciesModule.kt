@@ -5,7 +5,9 @@ import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.SherpaStreamingLabRunner
 import com.noteapp.audio.AudioRecordingController
 import com.noteapp.security.AndroidKeystoreDatabasePassphraseProvider
+import com.noteapp.security.AndroidKeystoreSessionArtifactStore
 import com.noteapp.security.DatabasePassphraseProvider
+import com.noteapp.security.SessionArtifactStore
 import com.noteapp.storage.NoteAppDatabase
 import com.noteapp.storage.AppPreferencesStore
 import com.noteapp.storage.ProcessingTelemetryStore
@@ -40,6 +42,12 @@ object RecordingDependenciesModule {
 
     @Provides
     @Singleton
+    fun provideSessionArtifactStore(
+        @ApplicationContext context: Context,
+    ): SessionArtifactStore = AndroidKeystoreSessionArtifactStore.create(context)
+
+    @Provides
+    @Singleton
     fun provideNoteAppDatabase(
         @ApplicationContext context: Context,
         passphraseProvider: DatabasePassphraseProvider,
@@ -56,9 +64,11 @@ object RecordingDependenciesModule {
     fun provideSessionCheckpointStore(
         @ApplicationContext context: Context,
         database: NoteAppDatabase,
+        artifactStore: SessionArtifactStore,
     ): SessionCheckpointStore = RoomSessionCheckpointStore(
         File(context.filesDir, "recordings"),
         database,
+        artifactStore,
     )
 
     @Provides
@@ -69,16 +79,21 @@ object RecordingDependenciesModule {
 
     @Provides
     @Singleton
-    fun provideAsrLabRunner(@ApplicationContext context: Context): AsrLabRunner = AsrLabRunner(context)
+    fun provideAsrLabRunner(
+        @ApplicationContext context: Context,
+        artifactStore: SessionArtifactStore,
+    ): AsrLabRunner = AsrLabRunner(context, artifactStore)
 
     @Provides
     @Singleton
     fun provideSherpaStreamingLabRunner(
         @ApplicationContext context: Context,
-    ): SherpaStreamingLabRunner = SherpaStreamingLabRunner(context)
+        artifactStore: SessionArtifactStore,
+    ): SherpaStreamingLabRunner = SherpaStreamingLabRunner(context, artifactStore)
 
     @Provides
     fun provideVadComparisonRunner(
         @ApplicationContext context: Context,
-    ): VadComparisonRunner = VadComparisonRunner(context)
+        artifactStore: SessionArtifactStore,
+    ): VadComparisonRunner = VadComparisonRunner(context, artifactStore)
 }

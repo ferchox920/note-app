@@ -14,6 +14,7 @@ import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.storage.AppPreferences
 import com.noteapp.storage.AppPreferencesStore
 import com.noteapp.storage.ProcessingTelemetryStore
+import com.noteapp.security.SessionArtifactStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
 import com.noteapp.asr.AsrLabConfig
@@ -101,6 +102,7 @@ class RecordingViewModel @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
     private val controller: AudioRecordingController,
     private val checkpointStore: SessionCheckpointStore,
+    private val sessionArtifactStore: SessionArtifactStore,
     private val appPreferencesStore: AppPreferencesStore,
     private val processingTelemetryStore: ProcessingTelemetryStore,
     private val asrLabRunner: AsrLabRunner,
@@ -109,7 +111,7 @@ class RecordingViewModel @Inject constructor(
 ) : ViewModel() {
     private val asrState = MutableStateFlow(AsrUiState())
     private val modelsDirectory = File(applicationContext.filesDir, "models")
-    private val incrementalTranscriptStore = IncrementalTranscriptStore()
+    private val incrementalTranscriptStore = IncrementalTranscriptStore(sessionArtifactStore)
     private val preferencesState: StateFlow<AppPreferences?> = appPreferencesStore.preferences
         .map<AppPreferences, AppPreferences?> { it }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -201,9 +203,7 @@ class RecordingViewModel @Inject constructor(
 
     init {
         refreshInstalledModels()
-        recoverInterruptedProcessingJobs()
-        refreshRecoverableSessions()
-        refreshCompletedSessions()
+        initializePersistedState()
     }
 
     fun onIntent(intent: RecordingIntent) {
@@ -454,32 +454,31 @@ class RecordingViewModel @Inject constructor(
         asrState.value = asrState.value.copy(installedModelIds = installed)
     }
 
-    private fun recoverInterruptedProcessingJobs() {
-        viewModelScope.launch {
-            processingTelemetryStore.recoverInterrupted()
-        }
-    }
-
-    private fun refreshRecoverableSessions() {
-        viewModelScope.launch {
-            val sessions = checkpointStore.findRecoverable()
-            asrState.value = asrState.value.copy(recoverableSessions = sessions)
-        }
-    }
-
-    private fun refreshCompletedSessions() {
-        viewModelScope.launch {
-            val sessions = checkpointStore.findCompleted()
-            val selectedSessionId = asrState.value.selectedLabSessionId
-                ?.takeIf { selected -> sessions.any { it.id == selected } }
-                ?: sessions.firstOrNull()?.id
-            asrState.value = asrState.value.copy(
-                completedSessions = sessions,
-                selectedLabSessionId = selectedSessionId,
-                selectedIncrementalTranscript = null,
-                selectedIncrementalError = null,
-            )
-            selectedSessionId?.let(::loadIncrementalTranscript)
+    private fun initializePersistedState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                sessionArtifactStore.migrateAll()
+                processingTelemetryStore.recoverInterrupted()
+                val recoverable = checkpointStore.findRecoverable()
+                val sessions = checkpointStore.findCompleted()
+                recoverable to sessions
+            }.onSuccess { (recoverable, sessions) ->
+                val selectedSessionId = asrState.value.selectedLabSessionId
+                    ?.takeIf { selected -> sessions.any { it.id == selected } }
+                    ?: sessions.firstOrNull()?.id
+                asrState.value = asrState.value.copy(
+                    recoverableSessions = recoverable,
+                    completedSessions = sessions,
+                    selectedLabSessionId = selectedSessionId,
+                    selectedIncrementalTranscript = null,
+                    selectedIncrementalError = null,
+                )
+                selectedSessionId?.let(::loadIncrementalTranscript)
+            }.onFailure { failure ->
+                asrState.value = asrState.value.copy(
+                    error = failure.message ?: "ARTIFACT_STORAGE_INITIALIZATION_FAILED",
+                )
+            }
         }
     }
 

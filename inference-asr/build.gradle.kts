@@ -34,6 +34,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core-security"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.sherpa.onnx) {

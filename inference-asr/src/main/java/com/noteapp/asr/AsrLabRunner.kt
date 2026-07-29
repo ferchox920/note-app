@@ -1,6 +1,7 @@
 package com.noteapp.asr
 
 import android.content.Context
+import com.noteapp.security.SessionArtifactStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,7 +30,10 @@ data class AsrLabResult(
     val transcript: String,
 )
 
-class AsrLabRunner(context: Context) {
+class AsrLabRunner(
+    context: Context,
+    private val artifactStore: SessionArtifactStore,
+) {
     private val appContext = context.applicationContext
     private val runMutex = Mutex()
 
@@ -126,10 +130,12 @@ class AsrLabRunner(context: Context) {
         sessionDirectory: File,
         config: AsrLabConfig,
     ): LabInput {
-        val checkpointJson = File(sessionDirectory, "checkpoint.json").readText()
+        val checkpointJson = artifactStore.readText(File(sessionDirectory, "checkpoint.json"))
         val capturePipelineId = Regex("\\\"capturePipeline\\\":\\\"([^\\\"]+)\\\"")
             .find(checkpointJson)?.groupValues?.get(1) ?: "direct-16k"
-        val timeline = JSONObject(File(sessionDirectory, "vad-segments.json").readText())
+        val timeline = JSONObject(
+            artifactStore.readText(File(sessionDirectory, "vad-segments.json")),
+        )
         val jsonSegments = timeline.getJSONArray("segments")
         val intervals = List(jsonSegments.length()) { index ->
             val item = jsonSegments.getJSONObject(index)
@@ -144,12 +150,12 @@ class AsrLabRunner(context: Context) {
             file.isFile && file.name.matches(Regex("segment-\\d{4}\\.pcm"))
         }.orEmpty().sortedBy { it.name }
         require(pcmFiles.isNotEmpty()) { "No PCM segments available" }
-        val totalBytes = pcmFiles.sumOf { it.length() }
+        val totalBytes = pcmFiles.sumOf(artifactStore::plaintextSize)
         require(totalBytes <= Int.MAX_VALUE) { "Lab session is too large to load" }
         val pcm = ByteArray(totalBytes.toInt())
         var offset = 0
         pcmFiles.forEach { file ->
-            file.inputStream().buffered().use { input ->
+            artifactStore.openInput(file).buffered().use { input ->
                 while (offset < pcm.size) {
                     val read = input.read(pcm, offset, pcm.size - offset)
                     if (read < 0) break
@@ -201,10 +207,13 @@ class AsrLabRunner(context: Context) {
             put("transcript", result.transcript)
             put("segments", segments)
         }
-        File(
-            sessionDirectory,
-            "asr-result-${result.modelId}-${result.benchmarkConfigId}.json",
-        ).writeText(json.toString())
+        artifactStore.writeTextAtomically(
+            File(
+                sessionDirectory,
+                "asr-result-${result.modelId}-${result.benchmarkConfigId}.json",
+            ),
+            json.toString(),
+        )
     }
 
     private data class LabInput(

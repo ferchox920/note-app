@@ -15,6 +15,7 @@ android {
 
 dependencies {
     implementation(project(":core-domain"))
+    implementation(project(":core-security"))
     implementation(project(":inference-asr"))
     implementation(project(":inference-vad"))
     implementation(libs.kotlinx.coroutines.core)

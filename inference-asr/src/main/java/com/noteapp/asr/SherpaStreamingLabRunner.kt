@@ -9,6 +9,7 @@ import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineStream
 import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import com.noteapp.security.SessionArtifactStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,9 +18,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import kotlin.math.max
 import kotlin.math.min
 
@@ -230,7 +228,10 @@ internal object StreamingDecodeLoop {
     }
 }
 
-class SherpaStreamingLabRunner(context: Context) {
+class SherpaStreamingLabRunner(
+    context: Context,
+    private val artifactStore: SessionArtifactStore,
+) {
     private val appContext = context.applicationContext
     private val runMutex = Mutex()
 
@@ -317,19 +318,19 @@ class SherpaStreamingLabRunner(context: Context) {
     }
 
     private fun loadInput(sessionDirectory: File): StreamingLabInput {
-        val checkpointJson = File(sessionDirectory, "checkpoint.json").readText()
+        val checkpointJson = artifactStore.readText(File(sessionDirectory, "checkpoint.json"))
         val capturePipelineId = Regex("\\\"capturePipeline\\\":\\\"([^\\\"]+)\\\"")
             .find(checkpointJson)?.groupValues?.get(1) ?: "direct-16k"
         val pcmFiles = sessionDirectory.listFiles { file ->
             file.isFile && file.name.matches(Regex("segment-\\d{4}\\.pcm"))
         }.orEmpty().sortedBy { it.name }
         require(pcmFiles.isNotEmpty()) { "No PCM segments available" }
-        val totalBytes = pcmFiles.sumOf { it.length() }
+        val totalBytes = pcmFiles.sumOf(artifactStore::plaintextSize)
         require(totalBytes <= Int.MAX_VALUE) { "Lab session is too large to load" }
         val pcm = ByteArray(totalBytes.toInt())
         var offset = 0
         pcmFiles.forEach { file ->
-            file.inputStream().buffered().use { input ->
+            artifactStore.openInput(file).buffered().use { input ->
                 while (offset < pcm.size) {
                     val read = input.read(pcm, offset, pcm.size - offset)
                     if (read < 0) break
@@ -378,22 +379,7 @@ class SherpaStreamingLabRunner(context: Context) {
             sessionDirectory,
             "asr-result-${descriptor.id}-${result.benchmarkConfigId}.json",
         )
-        val temp = File(sessionDirectory, "${output.name}.tmp")
-        temp.writeText(json.toString())
-        try {
-            Files.move(
-                temp.toPath(),
-                output.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(
-                temp.toPath(),
-                output.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        }
+        artifactStore.writeTextAtomically(output, json.toString())
     }
 
     private data class StreamingLabInput(

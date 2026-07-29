@@ -1,6 +1,8 @@
 package com.noteapp.audio
 
 import com.noteapp.domain.SessionStatus
+import com.noteapp.security.EncryptedSessionArtifactStore
+import com.noteapp.security.PlaintextSessionArtifactStore
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,13 +12,16 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import javax.crypto.spec.SecretKeySpec
 
 class AudioSessionWriterTest {
     private lateinit var root: File
+    private lateinit var artifacts: PlaintextSessionArtifactStore
 
     @Before
     fun setUp() {
         root = Files.createTempDirectory("audio-session-test").toFile()
+        artifacts = PlaintextSessionArtifactStore(root)
     }
 
     @After
@@ -26,7 +31,7 @@ class AudioSessionWriterTest {
 
     @Test
     fun `closing a segment stores byte count and sha256`() {
-        val writer = AudioSessionWriter(root, "session-1", PcmFormat(16_000))
+        val writer = AudioSessionWriter(root, "session-1", PcmFormat(16_000), artifactStore = artifacts)
         val bytes = byteArrayOf(1, 2, 3, 4)
 
         writer.openSegment().write(bytes, 0, bytes.size)
@@ -44,7 +49,7 @@ class AudioSessionWriterTest {
 
     @Test
     fun `checkpoint is replaced atomically and contains recoverable metadata`() {
-        val writer = AudioSessionWriter(root, "session-2", PcmFormat(16_000))
+        val writer = AudioSessionWriter(root, "session-2", PcmFormat(16_000), artifactStore = artifacts)
         writer.openSegment().apply { write(ByteArray(32_000), 0, 32_000) }
         writer.closeSegment()
 
@@ -60,13 +65,13 @@ class AudioSessionWriterTest {
     @Test
     fun `recovery verifies listed PCM and adopts crash orphan before appending`() {
         val format = PcmFormat(16_000)
-        val original = AudioSessionWriter(root, "session-3", format)
+        val original = AudioSessionWriter(root, "session-3", format, artifactStore = artifacts)
         original.openSegment().apply { write(ByteArray(640) { 1 }, 0, 640) }
         original.closeSegment()
         original.writeCheckpoint(SessionStatus.RECORDING)
         File(original.sessionDirectory, "segment-0001.pcm").writeBytes(ByteArray(1_280) { 2 })
 
-        val recovered = AudioSessionWriter.recover(root, "session-3", format)
+        val recovered = AudioSessionWriter.recover(root, "session-3", format, artifacts)
 
         assertEquals(2, recovered.completedSegments.size)
         assertEquals(1_920, recovered.totalBytes)
@@ -78,21 +83,21 @@ class AudioSessionWriterTest {
     @Test
     fun `recovery rejects modified listed PCM`() {
         val format = PcmFormat(16_000)
-        val original = AudioSessionWriter(root, "session-4", format)
+        val original = AudioSessionWriter(root, "session-4", format, artifactStore = artifacts)
         original.openSegment().apply { write(ByteArray(640) { 1 }, 0, 640) }
         val metadata = original.closeSegment()!!
         original.writeCheckpoint(SessionStatus.PAUSED)
         File(original.sessionDirectory, metadata.fileName).writeBytes(ByteArray(640) { 9 })
 
         assertThrows(IllegalArgumentException::class.java) {
-            AudioSessionWriter.recover(root, "session-4", format)
+            AudioSessionWriter.recover(root, "session-4", format, artifacts)
         }
     }
 
     @Test
     fun `recovery preserves capture quality counters`() {
         val format = PcmFormat(16_000)
-        val original = AudioSessionWriter(root, "session-5", format)
+        val original = AudioSessionWriter(root, "session-5", format, artifactStore = artifacts)
         original.writeCheckpoint(
             status = SessionStatus.RECORDING,
             metrics = AudioCaptureMetrics(
@@ -102,7 +107,7 @@ class AudioSessionWriterTest {
             ),
         )
 
-        val recovered = AudioSessionWriter.recover(root, "session-5", format)
+        val recovered = AudioSessionWriter.recover(root, "session-5", format, artifacts)
 
         assertEquals(2, recovered.checkpointMetrics.readErrorCount)
         assertEquals(3, recovered.checkpointMetrics.discontinuityCount)
@@ -116,10 +121,11 @@ class AudioSessionWriterTest {
             sessionId = "session-6",
             format = PcmFormat(16_000),
             capturePipeline = CapturePipeline.NATIVE_48_KHZ_TO_16_KHZ,
+            artifactStore = artifacts,
         )
         original.writeCheckpoint(SessionStatus.RECORDING)
 
-        val recovered = AudioSessionWriter.recover(root, "session-6", PcmFormat(16_000))
+        val recovered = AudioSessionWriter.recover(root, "session-6", PcmFormat(16_000), artifacts)
 
         assertEquals(CapturePipeline.NATIVE_48_KHZ_TO_16_KHZ, recovered.capturePipeline)
     }
@@ -131,10 +137,11 @@ class AudioSessionWriterTest {
             sessionId = "session-7",
             format = PcmFormat(16_000),
             incrementalModelId = "whisper-base-multilingual-q5_1",
+            artifactStore = artifacts,
         )
         original.writeCheckpoint(SessionStatus.RECORDING)
 
-        val recovered = AudioSessionWriter.recover(root, "session-7", PcmFormat(16_000))
+        val recovered = AudioSessionWriter.recover(root, "session-7", PcmFormat(16_000), artifacts)
 
         assertEquals("whisper-base-multilingual-q5_1", recovered.incrementalModelId)
     }
@@ -142,12 +149,12 @@ class AudioSessionWriterTest {
     @Test
     fun `lifecycle events are immutable ordered and recovered`() {
         val format = PcmFormat(16_000)
-        val writer = AudioSessionWriter(root, "session-8", format)
+        val writer = AudioSessionWriter(root, "session-8", format, artifactStore = artifacts)
         writer.writeLifecycleEvent("STARTED", SessionStatus.RECORDING, "ui")
         writer.writeLifecycleEvent("PAUSED", SessionStatus.PAUSED, "notification")
         writer.writeCheckpoint(SessionStatus.PAUSED)
 
-        val recovered = AudioSessionWriter.recover(root, "session-8", format)
+        val recovered = AudioSessionWriter.recover(root, "session-8", format, artifacts)
         recovered.writeLifecycleEvent("RESUMED", SessionStatus.RECORDING, "ui")
 
         val directory = File(writer.sessionDirectory, AudioSessionWriter.LIFECYCLE_EVENTS_DIRECTORY)
@@ -158,5 +165,39 @@ class AudioSessionWriterTest {
         assertTrue(directory.resolve("event-0000.json").readText().contains("\"event\":\"STARTED\""))
         assertTrue(directory.resolve("event-0001.json").readText().contains("\"source\":\"notification\""))
         assertTrue(directory.resolve("event-0002.json").readText().contains("\"event\":\"RESUMED\""))
+    }
+
+    @Test
+    fun `encrypted writer streams PCM and recovers authenticated metadata`() {
+        val artifactStore = EncryptedSessionArtifactStore(
+            root,
+            SecretKeySpec(ByteArray(32) { (it + 11).toByte() }, "AES"),
+        )
+        val format = PcmFormat(16_000)
+        val writer = AudioSessionWriter(
+            rootDirectory = root,
+            sessionId = "encrypted-session",
+            format = format,
+            artifactStore = artifactStore,
+        )
+        val pcm = ByteArray(64_000) { (it % 181).toByte() }
+        writer.openSegment().write(pcm, 0, pcm.size)
+        writer.closeSegment()
+        writer.writeCheckpoint(SessionStatus.PAUSED)
+
+        val checkpoint = writer.sessionDirectory.resolve(AudioSessionWriter.CHECKPOINT_FILE)
+        val segment = writer.sessionDirectory.resolve("segment-0000.pcm")
+        assertTrue(artifactStore.isEncrypted(checkpoint))
+        assertTrue(artifactStore.isEncrypted(segment))
+        assertFalse(checkpoint.readText().contains("PAUSED"))
+
+        val recovered = AudioSessionWriter.recover(
+            rootDirectory = root,
+            sessionId = "encrypted-session",
+            expectedFormat = format,
+            artifactStore = artifactStore,
+        )
+        assertEquals(64_000L, recovered.totalBytes)
+        assertEquals(64_000L, artifactStore.plaintextSize(segment))
     }
 }

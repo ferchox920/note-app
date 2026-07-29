@@ -1,12 +1,10 @@
 package com.noteapp.audio
 
 import com.noteapp.domain.SessionStatus
+import com.noteapp.security.ArtifactAppendSink
+import com.noteapp.security.SessionArtifactStore
 import java.io.Closeable
 import java.io.File
-import java.io.FileOutputStream
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -33,6 +31,7 @@ class AudioSessionWriter(
     val incrementalModelId: String? = null,
     restoredSegments: List<PcmSegmentMetadata> = emptyList(),
     restoredMetrics: AudioCaptureMetrics = AudioCaptureMetrics(),
+    private val artifactStore: SessionArtifactStore,
 ) {
     val sessionDirectory: File = File(rootDirectory, sessionId).apply {
         check(exists() || mkdirs()) { "Unable to create session directory" }
@@ -88,18 +87,7 @@ class AudioSessionWriter(
         val incrementalModelJson = incrementalModelId?.let { "\"$it\"" } ?: "null"
         val json = """{"schemaVersion":1,"sessionId":"$sessionId","status":"${status.name}","capturePipeline":"${capturePipeline.id}","captureSampleRateHz":${capturePipeline.captureSampleRateHz},"sampleRateHz":${format.sampleRateHz},"channelCount":${format.channelCount},"bitsPerSample":${format.bitsPerSample},"durationMs":$durationMs,"totalBytes":$totalBytes,"incrementalModelId":$incrementalModelJson,"readErrorCount":${metrics.readErrorCount},"discontinuityCount":${metrics.discontinuityCount},"estimatedMissingFrames":${metrics.estimatedMissingFrames},"errorCode":$errorJson,"segments":[$segmentJson]}"""
         val target = File(sessionDirectory, CHECKPOINT_FILE)
-        val temporary = File(sessionDirectory, "$CHECKPOINT_FILE.tmp")
-        temporary.writeText(json, Charsets.UTF_8)
-        try {
-            Files.move(
-                temporary.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        artifactStore.writeTextAtomically(target, json)
     }
 
     fun writeLifecycleEvent(
@@ -116,21 +104,10 @@ class AudioSessionWriter(
         }
         val fileName = "event-${sequence.toString().padStart(4, '0')}.json"
         val target = File(eventsDirectory, fileName)
-        val temporary = File(eventsDirectory, "$fileName.tmp")
         val durationMs = totalBytes * 1_000L / format.bytesPerSecond
         val errorJson = errorCode?.let(::jsonString) ?: "null"
         val json = """{"schemaVersion":1,"sequence":$sequence,"sessionId":${jsonString(sessionId)},"event":${jsonString(event)},"status":"${status.name}","source":${jsonString(source)},"observedAtEpochMs":${System.currentTimeMillis()},"observedAtMonotonicMs":${System.nanoTime() / 1_000_000L},"audioDurationMs":$durationMs,"totalBytes":$totalBytes,"errorCode":$errorJson}"""
-        temporary.writeText(json, Charsets.UTF_8)
-        try {
-            Files.move(
-                temporary.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        artifactStore.writeTextAtomically(target, json)
         nextLifecycleEventSequence += 1
     }
 
@@ -152,7 +129,7 @@ class AudioSessionWriter(
         internal val sequence: Int,
         internal val file: File,
     ) : Closeable {
-        private val output = FileOutputStream(file)
+        private val output: ArtifactAppendSink = artifactStore.openAppend(file)
         private val digest = MessageDigest.getInstance("SHA-256")
         private var closed = false
 
@@ -173,8 +150,7 @@ class AudioSessionWriter(
 
         internal fun sync() {
             check(!closed) { "Segment is closed" }
-            output.flush()
-            output.fd.sync()
+            output.sync()
         }
 
         override fun close() {
@@ -193,11 +169,12 @@ class AudioSessionWriter(
             rootDirectory: File,
             sessionId: String,
             expectedFormat: PcmFormat,
+            artifactStore: SessionArtifactStore,
         ): AudioSessionWriter {
             val sessionDirectory = File(rootDirectory, sessionId)
             val checkpoint = File(sessionDirectory, CHECKPOINT_FILE)
             require(checkpoint.isFile) { "Recovery checkpoint is missing" }
-            val json = checkpoint.readText(Charsets.UTF_8)
+            val json = artifactStore.readText(checkpoint)
             require(stringField(json, "sessionId") == sessionId) { "Session ID mismatch" }
             require(longField(json, "sampleRateHz") == expectedFormat.sampleRateHz.toLong()) {
                 "Sample rate mismatch"
@@ -219,7 +196,7 @@ class AudioSessionWriter(
                     sha256 = requireNotNull(stringField(segmentJson, "sha256")),
                 )
             }.toMutableList()
-            validateAndAppendOrphans(sessionDirectory, restored)
+            validateAndAppendOrphans(sessionDirectory, restored, artifactStore)
             val metrics = AudioCaptureMetrics(
                 readErrorCount = optionalLongField(json, "readErrorCount").toInt(),
                 discontinuityCount = optionalLongField(json, "discontinuityCount").toInt(),
@@ -237,12 +214,14 @@ class AudioSessionWriter(
                 incrementalModelId = stringField(json, "incrementalModelId"),
                 restoredSegments = restored,
                 restoredMetrics = metrics,
+                artifactStore = artifactStore,
             )
         }
 
         private fun validateAndAppendOrphans(
             sessionDirectory: File,
             restored: MutableList<PcmSegmentMetadata>,
+            artifactStore: SessionArtifactStore,
         ) {
             var expectedOffset = 0L
             restored.sortedBy { it.sequence }.forEachIndexed { index, metadata ->
@@ -252,8 +231,12 @@ class AudioSessionWriter(
                     "Invalid segment length metadata"
                 }
                 val file = File(sessionDirectory, metadata.fileName)
-                require(file.isFile && file.length() == metadata.byteCount) { "PCM segment size mismatch" }
-                require(sha256(file) == metadata.sha256) { "PCM segment checksum mismatch" }
+                require(file.isFile && artifactStore.plaintextSize(file) == metadata.byteCount) {
+                    "PCM segment size mismatch"
+                }
+                require(sha256(file, artifactStore) == metadata.sha256) {
+                    "PCM segment checksum mismatch"
+                }
                 expectedOffset = metadata.endByteOffset
             }
 
@@ -265,17 +248,17 @@ class AudioSessionWriter(
                 require(file.name == "segment-${expectedSequence.toString().padStart(4, '0')}.pcm") {
                     "Unexpected PCM segment during recovery"
                 }
-                require(file.length() > 0 && file.length() % 2L == 0L) {
+                val byteCount = artifactStore.plaintextSize(file)
+                require(byteCount > 0 && byteCount % 2L == 0L) {
                     "Incomplete PCM segment during recovery"
                 }
-                val byteCount = file.length()
                 restored += PcmSegmentMetadata(
                     sequence = expectedSequence,
                     fileName = file.name,
                     startByteOffset = expectedOffset,
                     endByteOffset = expectedOffset + byteCount,
                     byteCount = byteCount,
-                    sha256 = sha256(file),
+                    sha256 = sha256(file, artifactStore),
                 )
                 expectedOffset += byteCount
             }
@@ -325,9 +308,12 @@ class AudioSessionWriter(
             return objects
         }
 
-        private fun sha256(file: File): String {
+        private fun sha256(
+            file: File,
+            artifactStore: SessionArtifactStore,
+        ): String {
             val digest = MessageDigest.getInstance("SHA-256")
-            file.inputStream().buffered().use { input ->
+            artifactStore.openInput(file).buffered().use { input ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 while (true) {
                     val read = input.read(buffer)

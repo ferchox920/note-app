@@ -1,6 +1,7 @@
 package com.noteapp.vad
 
 import android.content.Context
+import com.noteapp.security.SessionArtifactStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -19,16 +20,19 @@ data class VadEngineComparison(
 
 data class VadComparisonResult(val engines: List<VadEngineComparison>)
 
-class VadComparisonRunner(context: Context) {
+class VadComparisonRunner(
+    context: Context,
+    private val artifactStore: SessionArtifactStore,
+) {
     private val applicationContext = context.applicationContext
-    private val timelineStore = VadTimelineStore()
+    private val timelineStore = VadTimelineStore(artifactStore)
 
     suspend fun compare(sessionDirectory: File): VadComparisonResult = withContext(Dispatchers.IO) {
         val pcmFiles = sessionDirectory.listFiles { file ->
             file.isFile && file.name.matches(Regex("segment-\\d{4}\\.pcm"))
         }.orEmpty().sortedBy { it.name }
         require(pcmFiles.isNotEmpty()) { "No PCM segments available" }
-        val checkpoint = File(sessionDirectory, "checkpoint.json").readText(Charsets.UTF_8)
+        val checkpoint = artifactStore.readText(File(sessionDirectory, "checkpoint.json"))
         val capturePipelineId = Regex("\\\"capturePipeline\\\":\\\"([^\\\"]+)\\\"")
             .find(checkpoint)?.groupValues?.get(1) ?: "direct-16k"
 
@@ -70,7 +74,7 @@ class VadComparisonRunner(context: Context) {
         val started = System.nanoTime()
         try {
             pcmFiles.forEach { file ->
-                file.inputStream().buffered().use { input ->
+                artifactStore.openInput(file).buffered().use { input ->
                     while (true) {
                         val read = input.read(buffer)
                         if (read < 0) break
@@ -115,9 +119,9 @@ class VadComparisonRunner(context: Context) {
         val enginesJson = results.joinToString(",") { result ->
             """{"engine":"${result.engine}","capturePipelineId":"${result.capturePipelineId}","segmentCount":${result.segmentCount},"processedDurationMs":${result.processedDurationMs},"detectedSpeechDurationMs":${result.detectedSpeechDurationMs},"speechCoverage":${decimal(result.speechCoverage)},"processingDurationMs":${result.processingDurationMs},"realTimeFactor":${decimal(result.realTimeFactor)}}"""
         }
-        File(sessionDirectory, "vad-comparison.json").writeText(
+        artifactStore.writeTextAtomically(
+            File(sessionDirectory, "vad-comparison.json"),
             """{"schemaVersion":1,"engines":[$enginesJson]}""",
-            Charsets.UTF_8,
         )
     }
 

@@ -3,6 +3,7 @@ package com.noteapp.storage
 import androidx.room.withTransaction
 import com.noteapp.domain.RecordingSession
 import com.noteapp.domain.SessionStatus
+import com.noteapp.security.SessionArtifactStore
 import java.io.File
 
 /**
@@ -14,6 +15,7 @@ import java.io.File
 class RoomSessionCheckpointStore(
     private val recordingsDirectory: File,
     private val database: NoteAppDatabase,
+    private val artifactStore: SessionArtifactStore,
 ) : SessionCheckpointStore {
     override suspend fun findRecoverable(): List<RecordingSession> {
         refreshIndex()
@@ -32,7 +34,7 @@ class RoomSessionCheckpointStore(
     }
 
     suspend fun refreshIndex() {
-        val snapshots = FileSessionArtifactReader(recordingsDirectory).readAll()
+        val snapshots = FileSessionArtifactReader(recordingsDirectory, artifactStore).readAll()
         snapshots.forEach { snapshot ->
             database.withTransaction {
                 database.sessionDao().upsert(snapshot.toEntity())

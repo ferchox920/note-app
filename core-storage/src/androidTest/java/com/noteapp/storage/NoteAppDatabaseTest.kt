@@ -1,5 +1,6 @@
 package com.noteapp.storage
 
+import com.noteapp.security.PlaintextSessionArtifactStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -132,7 +133,11 @@ class NoteAppDatabaseTest {
         directory.resolve("incremental-transcript.json").writeText(
             """{"schemaVersion":5,"modelId":"sherpa-es","segments":[{"startMs":0,"endMs":5000,"text":"original"}]}""",
         )
-        val store = RoomSessionCheckpointStore(temporaryFolder.root, database)
+        val store = RoomSessionCheckpointStore(
+            temporaryFolder.root,
+            database,
+            PlaintextSessionArtifactStore(temporaryFolder.root),
+        )
 
         assertEquals("artifact-session", store.findCompleted().single().id)
         store.refreshIndex()

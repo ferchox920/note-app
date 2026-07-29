@@ -1,5 +1,7 @@
 package com.noteapp.asr
 
+import com.noteapp.security.EncryptedSessionArtifactStore
+import com.noteapp.security.PlaintextSessionArtifactStore
 import kotlinx.collections.immutable.persistentListOf
 import org.json.JSONObject
 import org.junit.After
@@ -12,10 +14,11 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import javax.crypto.spec.SecretKeySpec
 
 class IncrementalTranscriptStoreTest {
     private lateinit var directory: File
-    private val store = IncrementalTranscriptStore()
+    private val store = IncrementalTranscriptStore(PlaintextSessionArtifactStore())
 
     @Before
     fun setUp() {
@@ -72,6 +75,33 @@ class IncrementalTranscriptStoreTest {
         val document = store.readDocument(directory)
         assertEquals("streaming-es", document?.modelId)
         assertEquals("direct-16k", document?.capturePipelineId)
+    }
+
+    @Test
+    fun `encrypted checkpoint and journal round trip without plaintext at rest`() {
+        val root = directory.resolve("recordings").apply { mkdirs() }
+        val session = root.resolve("session-asr").apply { mkdirs() }
+        val artifacts = EncryptedSessionArtifactStore(
+            root,
+            SecretKeySpec(ByteArray(32) { (it + 5).toByte() }, "AES"),
+        )
+        val encryptedStore = IncrementalTranscriptStore(artifacts)
+        val state = stateWithMetrics(3)
+
+        encryptedStore.writeCheckpoint(
+            sessionDirectory = session,
+            modelId = "streaming-es",
+            capturePipelineId = "direct-16k",
+            state = state,
+            persistedMetricCount = 0,
+        )
+
+        val checkpoint = session.resolve(IncrementalTranscriptStore.FILE_NAME)
+        val journal = session.resolve(IncrementalTranscriptStore.JOURNAL_FILE_NAME)
+        assertTrue(artifacts.isEncrypted(checkpoint))
+        assertTrue(artifacts.isEncrypted(journal))
+        assertFalse(checkpoint.readText().contains("streaming-es"))
+        assertEquals(3, encryptedStore.read(session)?.inferenceMetrics?.size)
     }
 
     @Test
