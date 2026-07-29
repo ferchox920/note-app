@@ -254,7 +254,7 @@ integración real del foreground service, completó 137.940 ms:
 - WER del tramo de lectura controlada 11,80 %: 21 errores sobre 178 palabras.
 
 La grabación ya estaba transcribiendo antes de que comenzara el texto de
-referencia. El evaluador v5 conserva el WER bruto y añade una alineación
+referencia. El evaluador v6 conserva el WER bruto y añade una alineación
 semiglobal: excluyó 23 palabras iniciales externas al texto y ninguna final. Esta
 métrica solo se usa con una lectura controlada; no perdona inserciones dentro del
 tramo alineado. Su implementación usa memoria O(n) respecto de la hipótesis.
@@ -285,6 +285,14 @@ bytes en solo 2 min 17 s. El adaptador ahora:
 Esto reduce aproximadamente cinco veces el número de decodificaciones, emisiones
 de estado y filas de telemetría sin recortar audio ni reiniciar el contexto.
 
+El verificador sanitizado tenía además una segunda implementación del RTF que
+sumaba `audioDurationMs` y podía contar dos veces ventanas solapadas. El esquema 2
+ahora divide toda la inferencia por la unión temporal de las ventanas, expone
+`coveredAudioDurationMs` y `totalInferenceDurationMs`, y la matriz G2 rechaza
+reportes antiguos o cocientes inconsistentes. Al regenerar la sesión en vivo,
+verificador y evaluador coincidieron exactamente: 12.416 ms de inferencia sobre
+137.940 ms de cobertura, RTF 0,090010.
+
 El smoke test físico posterior, sesión
 `d24dee16-cff9-42ed-8b0c-ff0dd6ddbd63`, confirmó la reducción: 24.260 ms
 produjeron 243 métricas (10,0/s), frente a 50,0/s en la lectura anterior. También
@@ -307,6 +315,8 @@ coste acotado para entradas arbitrarias.
 - El texto final provisional es el segmento cerrado por endpointing de Sherpa.
 - Whisper base q5_1 queda pospuesto hasta disponer de un refinamiento cancelable,
   acotado y validado sobre entradas difíciles; no se ejecuta automáticamente.
+- Una sesión con conflictos automáticos del prefijo estable no queda elegible
+  para revisión G2, aunque cumpla latencia y RTF.
 - G2 no se aprueba todavía: faltan 45 minutos continuos, revisión manual de
   estabilidad, medición de memoria/batería/termal en vivo y repetición en S25+.
 - La distribución del modelo Sherpa queda bloqueada hasta resolver su licencia

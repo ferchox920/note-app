@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 
@@ -124,17 +125,37 @@ def evaluate_g1(device: dict, verification: dict) -> dict[str, object]:
 
 def evaluate_g2(device: dict, verification: dict) -> dict[str, object]:
     incremental = verification.get("incremental") or {}
+    covered_audio_ms = incremental.get("coveredAudioDurationMs")
+    total_inference_ms = incremental.get("totalInferenceDurationMs")
+    weighted_rtf = incremental.get("weightedRealTimeFactor")
+    unique_coverage_rtf = (
+        verification.get("schemaVersion", 0) >= 2
+        and isinstance(covered_audio_ms, (int, float))
+        and covered_audio_ms > 0
+        and isinstance(total_inference_ms, (int, float))
+        and total_inference_ms >= 0
+        and isinstance(weighted_rtf, (int, float))
+        and math.isfinite(weighted_rtf)
+        and math.isclose(
+            weighted_rtf,
+            total_inference_ms / covered_audio_ms,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        )
+    )
     checks = {
         "s25Ultra": is_s25_ultra(device),
         "durationAtLeast45Minutes": verification.get("durationMs", 0) >= 45 * 60 * 1_000,
         "captureRemainedCleanUnderLoad": capture_clean(verification),
         "incrementalEvidencePresent": incremental.get("metricCount", 0) > 0,
+        "rtfUsesUniqueAudioCoverage": unique_coverage_rtf,
         "timeToFirstTextAtMost4s": incremental.get("timeToFirstTextMs") is not None
         and incremental["timeToFirstTextMs"] <= 4_000,
         "visibleLatencyP95AtMost6s": incremental.get("visibleLatencyP95Ms") is not None
         and incremental["visibleLatencyP95Ms"] <= 6_000,
-        "weightedRtfAtMost1": incremental.get("weightedRealTimeFactor") is not None
-        and incremental["weightedRealTimeFactor"] <= 1.0,
+        "weightedRtfAtMost1": isinstance(weighted_rtf, (int, float))
+        and math.isfinite(weighted_rtf)
+        and weighted_rtf <= 1.0,
         "noIncrementalTechnicalError": incremental.get("errorCode") is None,
         "noStablePrefixConflicts": incremental.get("stableConflictCount", 0) == 0,
     }

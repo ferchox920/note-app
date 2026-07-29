@@ -101,6 +101,12 @@ tiny/base, RTF, telemetría y umbrales incrementales. Su campo `approved` siempr
 `false`: un resultado `ELIGIBLE_FOR_MANUAL_REVIEW` exige confirmar consentimiento,
 pantalla apagada, calidad, duplicaciones, interrupciones y comportamiento térmico.
 
+Para G2, `verification.json` debe usar esquema 2. El RTF se valida como tiempo
+total de inferencia dividido por cobertura temporal única; así el overlap no
+cuenta dos veces como audio procesado. La matriz rechaza reportes de esquema 1 y
+cualquier RTF que no coincida con `totalInferenceDurationMs` dividido por
+`coveredAudioDurationMs`.
+
 ## Privacidad
 
 Cada extracción crea `artifacts/private/device-sessions/<sesión>-<fecha>/` con:

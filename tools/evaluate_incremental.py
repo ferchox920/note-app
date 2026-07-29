@@ -143,6 +143,7 @@ def summarize_session(
         "visibleLatencyP95Within6s": p95_visible is not None and p95_visible <= 6_000,
         "sustainedRtfAtMost1": weighted_rtf <= 1.0,
         "noTechnicalError": error_code in (None, ""),
+        "noStablePrefixConflicts": int(data.get("stableConflictCount", 0)) == 0,
     }
     native_timing_totals = {
         name: sum(
@@ -272,7 +273,7 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     report = {
-        "schemaVersion": 5,
+        "schemaVersion": 6,
         "note": (
             "wordErrorRate scores the complete captured transcript. "
             "referenceSpanWordErrorRate is only for controlled read-aloud prompts: "

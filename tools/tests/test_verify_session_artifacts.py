@@ -111,7 +111,10 @@ class VerifySessionArtifactsTest(unittest.TestCase):
         self.assertEqual(1, report["vad"]["segmentCount"])
         self.assertEqual("base", report["asr"][0]["modelId"])
         self.assertEqual(12, report["incremental"]["visibleLatencyP95Ms"])
-        self.assertEqual(0.5, report["incremental"]["weightedRealTimeFactor"])
+        self.assertEqual(20, report["incremental"]["coveredAudioDurationMs"])
+        self.assertEqual(20, report["incremental"]["totalInferenceDurationMs"])
+        self.assertEqual(1.0, report["incremental"]["weightedRealTimeFactor"])
+        self.assertEqual(2, report["schemaVersion"])
         self.assertFalse(report["contentIncluded"])
         self.assertNotIn("sensitive", json.dumps(report))
 
@@ -155,6 +158,18 @@ class VerifySessionArtifactsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             verify_session(self.session)
+
+    def test_rejects_incremental_duration_inconsistent_with_window(self):
+        path = self.session / "incremental-transcript.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["inferenceMetrics"][0]["audioDurationMs"] = 10
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Incremental audio duration does not match its window",
+        ):
+            verify_session(self.session, require_incremental=True)
 
     def test_rejects_overlapping_vad_intervals(self):
         self.write_json("vad-segments.json", {

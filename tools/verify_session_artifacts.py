@@ -36,6 +36,25 @@ def percentile(values: list[float], probability: float) -> float | None:
     return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
 
 
+def covered_audio_duration_ms(metrics: list[dict]) -> int:
+    """Return unique inference timeline coverage without double-counting overlap."""
+    if not metrics:
+        return 0
+    intervals = sorted(
+        (int(item["windowStartMs"]), int(item["windowEndMs"]))
+        for item in metrics
+    )
+    covered = 0
+    current_start, current_end = intervals[0]
+    for start, end in intervals[1:]:
+        if start <= current_end:
+            current_end = max(current_end, end)
+        else:
+            covered += current_end - current_start
+            current_start, current_end = start, end
+    return covered + current_end - current_start
+
+
 def validate_segments(session_dir: Path, checkpoint: dict, allow_unlisted_pcm: bool) -> dict[str, object]:
     expected_offset = 0
     listed_names: set[str] = set()
@@ -171,11 +190,15 @@ def validate_incremental(session_dir: Path, required: bool) -> dict[str, object]
         require(metric["sequence"] == sequence, "Incremental metric sequence is not contiguous")
         require(0 <= metric["windowStartMs"] < metric["windowEndMs"], "Invalid incremental window")
         require(metric["audioDurationMs"] > 0, "Incremental audio duration must be positive")
+        require(
+            metric["audioDurationMs"] == metric["windowEndMs"] - metric["windowStartMs"],
+            "Incremental audio duration does not match its window",
+        )
         require(metric["inferenceDurationMs"] >= 0, "Incremental inference duration is negative")
         require(metric["visibleLatencyMs"] >= 0, "Incremental visible latency is negative")
         require(math.isfinite(metric["realTimeFactor"]) and metric["realTimeFactor"] >= 0, "Invalid incremental RTF")
     partial_latencies = [float(metric["visibleLatencyMs"]) for metric in metrics if not metric["final"]]
-    total_audio_ms = sum(int(metric["audioDurationMs"]) for metric in metrics)
+    covered_audio_ms = covered_audio_duration_ms(metrics)
     total_inference_ms = sum(int(metric["inferenceDurationMs"]) for metric in metrics)
     previous_end = 0
     for segment in data.get("segments", []):
@@ -193,7 +216,11 @@ def validate_incremental(session_dir: Path, required: bool) -> dict[str, object]
         "errorCode": data.get("errorCode"),
         "visibleLatencyP50Ms": percentile(partial_latencies, 0.50),
         "visibleLatencyP95Ms": percentile(partial_latencies, 0.95),
-        "weightedRealTimeFactor": total_inference_ms / total_audio_ms if total_audio_ms else None,
+        "coveredAudioDurationMs": covered_audio_ms,
+        "totalInferenceDurationMs": total_inference_ms,
+        "weightedRealTimeFactor": (
+            total_inference_ms / covered_audio_ms if covered_audio_ms else None
+        ),
     }
 
 
@@ -282,7 +309,7 @@ def verify_session(
     incremental = validate_incremental(session_dir, require_incremental)
     lifecycle = validate_lifecycle_events(session_dir, checkpoint, required_lifecycle_events or [])
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sessionId": checkpoint["sessionId"],
         "status": checkpoint["status"],
         "capturePipelineId": checkpoint.get("capturePipeline", "unknown"),

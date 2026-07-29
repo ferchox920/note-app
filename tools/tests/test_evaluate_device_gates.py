@@ -19,6 +19,7 @@ class EvaluateDeviceGatesTest(unittest.TestCase):
     def setUp(self):
         self.device = {"productModel": "SM-S938B", "productDevice": "pa3q"}
         self.verification = {
+            "schemaVersion": 2,
             "status": "COMPLETED",
             "checkpointErrorCode": None,
             "durationMs": 5_400_000,
@@ -41,6 +42,8 @@ class EvaluateDeviceGatesTest(unittest.TestCase):
             "incremental": {
                 "metricCount": 100, "timeToFirstTextMs": 3_000,
                 "visibleLatencyP95Ms": 5_000, "weightedRealTimeFactor": 0.9,
+                "coveredAudioDurationMs": 1_000,
+                "totalInferenceDurationMs": 900,
                 "errorCode": None, "stableConflictCount": 0,
             },
         }
@@ -97,12 +100,29 @@ class EvaluateDeviceGatesTest(unittest.TestCase):
     def test_incremental_latency_and_rtf_fail_g2(self):
         self.verification["incremental"]["visibleLatencyP95Ms"] = 7_500
         self.verification["incremental"]["weightedRealTimeFactor"] = 1.3
+        self.verification["incremental"]["totalInferenceDurationMs"] = 1_300
 
         gate = MODULE.evaluate_g2(self.device, self.verification)
 
         self.assertFalse(gate["automaticThresholdsMet"])
         self.assertFalse(gate["automaticChecks"]["visibleLatencyP95AtMost6s"])
         self.assertFalse(gate["automaticChecks"]["weightedRtfAtMost1"])
+
+    def test_legacy_verification_cannot_reuse_overlap_biased_rtf(self):
+        self.verification["schemaVersion"] = 1
+
+        gate = MODULE.evaluate_g2(self.device, self.verification)
+
+        self.assertFalse(gate["automaticThresholdsMet"])
+        self.assertFalse(gate["automaticChecks"]["rtfUsesUniqueAudioCoverage"])
+
+    def test_inconsistent_rtf_is_rejected(self):
+        self.verification["incremental"]["totalInferenceDurationMs"] = 800
+
+        gate = MODULE.evaluate_g2(self.device, self.verification)
+
+        self.assertFalse(gate["automaticThresholdsMet"])
+        self.assertFalse(gate["automaticChecks"]["rtfUsesUniqueAudioCoverage"])
 
     def test_cli_writes_sanitized_manual_review_report(self):
         with tempfile.TemporaryDirectory() as temporary:

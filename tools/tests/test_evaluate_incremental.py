@@ -101,6 +101,26 @@ class EvaluateIncrementalTest(unittest.TestCase):
         self.assertEqual(1.25, summary["weightedRealTimeFactor"])
         self.assertFalse(summary["eligibleForManualG2Review"])
 
+    def test_stable_prefix_conflict_blocks_automatic_eligibility(self):
+        summary = summarize_session({
+            "modelId": "base",
+            "capturePipelineId": "direct-16k",
+            "timeToFirstTextMs": 1_000,
+            "stableConflictCount": 1,
+            "errorCode": None,
+            "inferenceMetrics": [{
+                "final": False,
+                "windowStartMs": 0,
+                "windowEndMs": 4_000,
+                "audioDurationMs": 4_000,
+                "inferenceDurationMs": 1_000,
+                "visibleLatencyMs": 1_000,
+            }],
+        })
+
+        self.assertFalse(summary["automaticThresholds"]["noStablePrefixConflicts"])
+        self.assertFalse(summary["eligibleForManualG2Review"])
+
     def test_aggregate_uses_worst_session_for_g2_risk(self):
         rows = [
             {
@@ -171,7 +191,7 @@ class EvaluateIncrementalTest(unittest.TestCase):
             report = json.loads(
                 (output / "incremental-evaluation.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(5, report["schemaVersion"])
+            self.assertEqual(6, report["schemaVersion"])
             self.assertIn("referenceSpanWordErrorRate", report["sessions"][0])
 
 

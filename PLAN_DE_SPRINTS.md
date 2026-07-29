@@ -246,6 +246,9 @@ incluía 10,4 s previos a la primera frase; la latencia algorítmica derivada fu
 El adaptador ahora agrupa las lecturas de captura en tramas de 100 ms para evitar
 persistir y recomponer una métrica cada ~20 ms. Sherpa queda seleccionado
 provisionalmente tanto para el texto en vivo como para el cierre de cada segmento.
+El verificador G2 usa desde su esquema 2 cobertura temporal única para el RTF,
+por lo que las ventanas solapadas no abaratan artificialmente la inferencia; la
+matriz rechaza evidencia G2 generada con el cálculo anterior.
 Whisper base no se activa automáticamente como refinamiento: una repetición en
 frío sobre esta entrada superó RTF 1 sin completar y los intentos diagnósticos
 acotados fueron revertidos. G2 sigue pendiente hasta una prueba continua de

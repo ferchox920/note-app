@@ -63,6 +63,12 @@ python .\tools\evaluate_incremental.py `
 
 La salida `incremental-evaluation.json`/CSV agrupa por modelo y pipeline, informa
 p50/p95, peor sesión, descartes, conflictos y WER cuando existe referencia.
+Tanto este evaluador como `verify_session_artifacts.py` calculan RTF contra la
+unión temporal de las ventanas, no contra la suma de `audioDurationMs`. El reporte
+sanitizado de verificación usa esquema 2, expone `coveredAudioDurationMs` y
+`totalInferenceDurationMs`; la matriz G2 rechaza esquemas anteriores o un cociente
+inconsistente. Un `stableConflictCount` mayor que cero también bloquea la
+elegibilidad automática.
 `wordErrorRate` compara el texto completo capturado. Para una lectura controlada,
 `referenceSpanWordErrorRate` alinea la referencia contra el mejor tramo de la
 hipótesis: puede excluir únicamente palabras externas al principio o al final,
