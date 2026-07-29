@@ -299,6 +299,31 @@ produjeron 243 métricas (10,0/s), frente a 50,0/s en la lectura anterior. Tambi
 obtuvo primer texto en 2.800 ms, RTF 0,0479, cero descartes, cero discontinuidades
 y cero errores técnicos.
 
+### Preparación de telemetría para 45 minutos
+
+Aunque 10 métricas/s redujo el volumen, la lista inmutable estándar seguía usando
+`lista + métrica`, que copia todas las referencias anteriores en cada inserción:
+27.000 tramas de 100 ms producían crecimiento cuadrático. Ahora la línea temporal
+usa `kotlinx.collections.immutable` 0.4.0 y sus snapshots comparten estructura.
+
+La persistencia también dejó de reescribir todas las métricas en cada endpoint:
+
+- durante la sesión, cada checkpoint agrega solo el sufijo nuevo a
+  `incremental-metrics.jsonl` y persiste atómicamente el número confirmado;
+- una recuperación ignora y recorta atómicamente cualquier cola de journal que
+  no alcanzó a quedar confirmada por el checkpoint;
+- un fallo de escritura se revierte hasta el último sufijo confirmado y expone
+  `INCREMENTAL_ASR_PERSISTENCE_FAILED` en lugar de continuar silenciosamente;
+- al completar o cerrar la sesión, `incremental-transcript.json` esquema 5
+  materializa una sola copia autocontenida y elimina el journal;
+- el contenido hablado y la telemetría intermedia permanecen dentro del
+  directorio privado de la sesión.
+
+El soak JVM equivalente a 45 minutos recorrió 27.000 métricas y 270 endpoints,
+verificó continuidad, recuperación y materialización final en 1,33 s en la
+máquina de desarrollo. Es una prueba determinista de complejidad y consistencia,
+no sustituye la medición de CPU, memoria, batería o almacenamiento en el S25.
+
 Un intento de repetir Whisper base inmediatamente después de la lectura fue
 cancelado de forma segura: superó tres minutos con ocupación sostenida de varios
 núcleos y la piel llegó a 37,9 °C, cerca del primer umbral térmico de 38 °C. No
@@ -317,6 +342,8 @@ coste acotado para entradas arbitrarias.
   acotado y validado sobre entradas difíciles; no se ejecuta automáticamente.
 - Una sesión con conflictos automáticos del prefijo estable no queda elegible
   para revisión G2, aunque cumpla latencia y RTF.
+- La telemetría de 45 minutos queda cubierta por soak sintético; todavía debe
+  verificarse su coste real en el S25 Ultra durante la ejecución física.
 - G2 no se aprueba todavía: faltan 45 minutos continuos, revisión manual de
   estabilidad, medición de memoria/batería/termal en vivo y repetición en S25+.
 - La distribución del modelo Sherpa queda bloqueada hasta resolver su licencia

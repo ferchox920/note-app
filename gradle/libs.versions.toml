@@ -5,6 +5,8 @@ composeBom = "2026.06.01"
 activityCompose = "1.13.0"
 lifecycle = "2.10.0"
 coroutines = "1.11.0"
+immutableCollections = "0.4.0"
+jsonJava = "20260719"
 junit = "4.13.2"
 androidVad = "2.0.10-cf.4"
 hilt = "2.57.1"
@@ -23,6 +25,8 @@ androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "immutableCollections" }
+json-java = { module = "org.json:json", version.ref = "jsonJava" }
 junit = { module = "junit:junit", version.ref = "junit" }
 android-vad-webrtc = { module = "com.cloudflare.realtimekit.android-vad:webrtc", version.ref = "androidVad" }
 android-vad-silero = { module = "com.cloudflare.realtimekit.android-vad:silero", version.ref = "androidVad" }

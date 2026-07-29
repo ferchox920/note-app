@@ -249,6 +249,12 @@ provisionalmente tanto para el texto en vivo como para el cierre de cada segment
 El verificador G2 usa desde su esquema 2 cobertura temporal única para el RTF,
 por lo que las ventanas solapadas no abaratan artificialmente la inferencia; la
 matriz rechaza evidencia G2 generada con el cálculo anterior.
+La preparación de la prueba larga eliminó además dos costes cuadráticos: cada
+métrica se agrega ahora a una lista persistente con compartición estructural y
+los checkpoints agregan únicamente métricas nuevas a un journal. El JSON
+autocontenido se materializa una sola vez al finalizar. Un soak JVM equivalente
+a 45 minutos validó 27.000 métricas y 270 checkpoints, incluida recuperación de
+una cola no confirmada.
 Whisper base no se activa automáticamente como refinamiento: una repetición en
 frío sobre esta entrada superó RTF 1 sin completar y los intentos diagnósticos
 acotados fueron revertidos. G2 sigue pendiente hasta una prueba continua de

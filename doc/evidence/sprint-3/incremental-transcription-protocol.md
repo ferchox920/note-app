@@ -49,6 +49,14 @@ Cada inferencia persiste inicio/fin de ventana, tipo parcial/final, duración de
 tiempo de inferencia, latencia visible, RTF, tiempos nativos de Whisper y si
 reutilizó un resultado idéntico o suprimió un loop repetitivo. La UI y el reporte
 acumulan las supresiones para no confundirlas con ausencia de voz.
+Durante una sesión activa, las métricas nuevas se agregan a
+`incremental-metrics.jsonl`; el checkpoint atómico indica cuántas líneas están
+confirmadas. El archivo es sensible y no debe salir del directorio privado. Al
+terminar, la app materializa todas las métricas una sola vez dentro de
+`incremental-transcript.json` esquema 5 y elimina el journal. Si hubo un cierre
+entre ambas escrituras, la recuperación descarta únicamente la cola no confirmada.
+Un fallo de escritura debe aparecer como `INCREMENTAL_ASR_PERSISTENCE_FAILED` y
+bloquea la elegibilidad automática de G2.
 El RTF sostenido se calcula contra la unión temporal de las ventanas, no contra la
 suma que contaría el overlap varias veces. Después de copiar exclusivamente los
 JSON autorizados a un directorio privado, generar percentiles con:
@@ -94,6 +102,8 @@ de captura y duplicaciones.
 6. Revisar manualmente duplicaciones o reescrituras del prefijo estable.
 7. Verificar que `incremental-transcript.json` corresponda a lo mostrado y que una
    recuperación conserve los segmentos finalizados sin restaurar una cola inestable.
+8. Confirmar que una sesión completada no conserve `incremental-metrics.jsonl` y
+   que el JSON final contenga la secuencia completa y contigua de métricas.
 
 Extraer y validar la evidencia desde la APK debug con:
 

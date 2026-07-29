@@ -5,6 +5,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -88,9 +91,18 @@ data class IncrementalAsrState(
     val lastVisibleLatencyMs: Long? = null,
     val lastRealTimeFactor: Double? = null,
     val finalizedSegments: List<IncrementalTranscriptSegment> = emptyList(),
-    val inferenceMetrics: List<IncrementalInferenceMetric> = emptyList(),
+    val inferenceMetrics: List<IncrementalInferenceMetric> = persistentListOf(),
     val errorCode: String? = null,
 )
+
+internal fun List<IncrementalInferenceMetric>.appendMetric(
+    metric: IncrementalInferenceMetric,
+): List<IncrementalInferenceMetric> =
+    if (this is PersistentList<IncrementalInferenceMetric>) {
+        add(metric)
+    } else {
+        toPersistentList().add(metric)
+    }
 
 internal data class IncrementalInferenceTask(
     val window: IncrementalPcmWindow,
@@ -392,7 +404,7 @@ class IncrementalAsrCoordinator(
                 stableText = stable,
                 unstableText = if (task.final) "" else transcript.unstableText,
                 finalizedSegments = completed,
-                inferenceMetrics = current.inferenceMetrics + metric,
+                inferenceMetrics = current.inferenceMetrics.appendMetric(metric),
                 partialCount = current.partialCount + if (task.final) 0 else 1,
                 stableConflictCount = current.stableConflictCount + if (transcript.stableConflict) 1 else 0,
                 suppressedRepetitionCount = current.suppressedRepetitionCount +

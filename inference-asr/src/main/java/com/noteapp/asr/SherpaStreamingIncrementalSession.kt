@@ -227,7 +227,7 @@ class SherpaStreamingIncrementalSession private constructor(
                 },
                 lastVisibleLatencyMs = visibleLatencyMs,
                 lastRealTimeFactor = metric.realTimeFactor,
-                inferenceMetrics = current.inferenceMetrics + metric,
+                inferenceMetrics = current.inferenceMetrics.appendMetric(metric),
             )
         }
 

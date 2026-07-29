@@ -79,6 +79,7 @@ class AudioCaptureService : Service() {
     private var incrementalCollectorJob: Job? = null
     @Volatile private var incrementalState = IncrementalAsrState(enabled = false)
     private var incrementalModelId: String? = null
+    private var incrementalPersistedMetricCount = 0
     private val incrementalTranscriptStore = IncrementalTranscriptStore()
 
     override fun onCreate() {
@@ -234,14 +235,20 @@ class AudioCaptureService : Service() {
 
     private suspend fun setupIncrementalAsr(modelId: String?) {
         releaseIncrementalAsr(drain = false)
+        incrementalPersistedMetricCount = 0
         incrementalModelId = modelId
         if (modelId.isNullOrBlank()) {
             incrementalState = IncrementalAsrState(enabled = false)
             return
         }
-        val restoredIncrementalState = writer?.sessionDirectory?.let { sessionDirectory ->
-            runCatching { incrementalTranscriptStore.read(sessionDirectory) }.getOrNull()
+        val restoredIncremental = writer?.sessionDirectory?.let { sessionDirectory ->
+            runCatching {
+                incrementalTranscriptStore.read(sessionDirectory) to
+                    incrementalTranscriptStore.persistedMetricCount(sessionDirectory)
+            }.getOrNull()
         }
+        val restoredIncrementalState = restoredIncremental?.first
+        incrementalPersistedMetricCount = restoredIncremental?.second ?: 0
         val session = if (modelId == SherpaStreamingModelCatalog.spanishKroko.id) {
             runCatching {
                 val descriptor = SherpaStreamingModelCatalog.spanishKroko
@@ -317,8 +324,9 @@ class AudioCaptureService : Service() {
             session.state.collect { state ->
                 incrementalState = state
                 if (state.finalizedSegments.size != lastPersistedSegmentCount) {
-                    persistIncrementalTranscript()
-                    lastPersistedSegmentCount = state.finalizedSegments.size
+                    if (persistIncrementalCheckpoint()) {
+                        lastPersistedSegmentCount = state.finalizedSegments.size
+                    }
                 }
                 val status = RecordingRuntime.state.value.status
                 if (status != SessionStatus.NEW) publish(status)
@@ -331,23 +339,50 @@ class AudioCaptureService : Service() {
         incrementalState = incrementalSession?.state?.value ?: incrementalState
         incrementalCollectorJob?.cancelAndJoin()
         incrementalCollectorJob = null
-        persistIncrementalTranscript()
+        persistFinalIncrementalTranscript()
         incrementalSession = null
         incrementalEngine?.release()
         incrementalEngine = null
     }
 
-    private fun persistIncrementalTranscript() {
-        val activeWriter = writer ?: return
-        val modelId = incrementalModelId ?: return
-        runCatching {
-            incrementalTranscriptStore.write(
+    private fun persistIncrementalCheckpoint(): Boolean {
+        val activeWriter = writer ?: return false
+        val modelId = incrementalModelId ?: return false
+        return runCatching {
+            incrementalPersistedMetricCount = incrementalTranscriptStore.writeCheckpoint(
                 sessionDirectory = activeWriter.sessionDirectory,
                 modelId = modelId,
                 capturePipelineId = capturePipeline.id,
                 state = incrementalState,
+                persistedMetricCount = incrementalPersistedMetricCount,
             )
+            true
+        }.getOrElse {
+            reportIncrementalPersistenceFailure()
+            false
         }
+    }
+
+    private fun persistFinalIncrementalTranscript() {
+        val activeWriter = writer ?: return
+        val modelId = incrementalModelId ?: return
+        runCatching {
+            incrementalTranscriptStore.writeFinal(
+                sessionDirectory = activeWriter.sessionDirectory,
+                modelId = modelId,
+                capturePipelineId = capturePipeline.id,
+                state = incrementalState,
+                persistedMetricCount = incrementalPersistedMetricCount,
+            )
+            incrementalPersistedMetricCount = 0
+        }.onFailure {
+            reportIncrementalPersistenceFailure()
+        }
+    }
+
+    private fun reportIncrementalPersistenceFailure() {
+        incrementalState = incrementalState.copy(errorCode = ERROR_INCREMENTAL_PERSISTENCE_FAILED)
+        incrementalSession?.reportError(ERROR_INCREMENTAL_PERSISTENCE_FAILED)
     }
 
     private fun replayVadTail(recoveredWriter: AudioSessionWriter, startByteOffset: Long) {
@@ -883,6 +918,8 @@ class AudioCaptureService : Service() {
         private const val ERROR_INCREMENTAL_MODEL_UNKNOWN = "INCREMENTAL_ASR_MODEL_UNKNOWN"
         private const val ERROR_INCREMENTAL_MODEL_UNAVAILABLE = "INCREMENTAL_ASR_MODEL_UNAVAILABLE"
         private const val ERROR_INCREMENTAL_VAD_REQUIRED = "INCREMENTAL_ASR_VAD_REQUIRED"
+        private const val ERROR_INCREMENTAL_PERSISTENCE_FAILED =
+            "INCREMENTAL_ASR_PERSISTENCE_FAILED"
 
         private const val ERROR_PERMISSION_DENIED = "AUDIO_PERMISSION_DENIED"
         private const val ERROR_UNSUPPORTED_FORMAT = "AUDIO_FORMAT_UNSUPPORTED"

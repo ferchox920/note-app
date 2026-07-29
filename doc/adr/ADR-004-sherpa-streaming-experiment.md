@@ -15,6 +15,8 @@ documento maestro contempla Sherpa-ONNX como alternativa realmente streaming.
 - Usar Sherpa-ONNX 1.13.4 detrás de `IncrementalAsrSession`.
 - Evaluar el Zipformer español Kroko fijado por revisión, tamaño y SHA-256.
 - Alimentar PCM16 mono a 16 kHz en tramas continuas de 100 ms.
+- Conservar la telemetría larga en listas persistentes con compartición
+  estructural y checkpoints append-only; materializar el JSON completo al cerrar.
 - Mantener el estado del transductor durante toda la sesión y finalizar segmentos
   mediante su endpointing nativo.
 - Conservar WebRTC VAD para evidencia, sin convertirlo en dependencia del
@@ -42,7 +44,9 @@ La evidencia completa y sus límites están en
 
 El backend cumple rendimiento de tiempo real y mejora drásticamente la calidad
 visible frente al Whisper rápido. A cambio, aumenta el APK, introduce ONNX Runtime
-y obliga a alinear su ABI con Silero. La calidad del tramo controlado cumple el
+y obliga a alinear su ABI con Silero. La telemetría añade
+`kotlinx.collections.immutable` 0.4.0 (Apache-2.0) para evitar copias cuadráticas.
+La calidad del tramo controlado cumple el
 máximo de 22 %, pero una revalidación fría de Whisper base excedió RTF 1 sin
 finalizar. Por eso no se usa como refinamiento automático. G2 todavía exige una
 sesión continua de 45 minutos y repetición en S25+.
@@ -52,3 +56,5 @@ sesión continua de 45 minutos y repetición en S25+.
 - [Sherpa-ONNX para Android](https://k2-fsa.github.io/sherpa/onnx/android/index.html)
 - [Release 1.13.4 de Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.4)
 - [Repositorio fijado del modelo experimental](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/tree/20cf7a4921613397841d31168796cade5b866585)
+- [PersistentList de Kotlin](https://kotlinlang.org/api/kotlinx.collections.immutable/kotlinx-collections-immutable/kotlinx.collections.immutable/-persistent-list/)
+- [Release 0.4.0 de kotlinx.collections.immutable](https://github.com/Kotlin/kotlinx.collections.immutable/releases/tag/v0.4.0)

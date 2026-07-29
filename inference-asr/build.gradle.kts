@@ -35,10 +35,12 @@ android {
 
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.collections.immutable)
     implementation(libs.sherpa.onnx) {
         artifact {
             type = "aar"
         }
     }
     testImplementation(libs.junit)
+    testImplementation(libs.json.java)
 }
