@@ -42,6 +42,30 @@ class FileSessionCheckpointStoreTest {
         assertEquals(99_000, result.single().durationMs)
     }
 
+    @Test
+    fun `reads finalized transcript segments and model from artifact`() {
+        writeCheckpoint("indexed", "COMPLETED", 8_000)
+        temporaryFolder.root.resolve("indexed").resolve("incremental-transcript.json").writeText(
+            """
+            {
+              "schemaVersion": 5,
+              "modelId": "sherpa-es",
+              "segments": [
+                {"startMs": 0, "endMs": 2500, "text": "primera frase"},
+                {"startMs": 2500, "endMs": 8000, "text": "texto con \"comillas\""}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val snapshot = FileSessionArtifactReader(temporaryFolder.root).readAll().single()
+
+        assertEquals("sherpa-es", snapshot.transcriptModelId)
+        assertEquals(2, snapshot.transcriptSegments.size)
+        assertEquals(2_500, snapshot.transcriptSegments[1].startMs)
+        assertEquals("texto con \"comillas\"", snapshot.transcriptSegments[1].text)
+    }
+
     private fun writeCheckpoint(
         id: String,
         status: String,

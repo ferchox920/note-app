@@ -302,6 +302,11 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
 **Backlog prioritario**
 
 - P0. Implementar Room para sesiones, segmentos, notas, trabajos y métricas.
+  **En curso (2026-07-29):** esquema v1 exportado para las cinco entidades,
+  DAOs base e índice idempotente de sesiones/segmentos desde los artefactos
+  existentes, validado en S25 Ultra. Falta conectar la escritura funcional de
+  notas, trabajos y métricas antes de cerrar la historia. Véase
+  [`doc/evidence/sprint-4/room-foundation-2026-07-29.md`](doc/evidence/sprint-4/room-foundation-2026-07-29.md).
 - P0. Implementar DataStore para preferencias y flags no relacionales.
 - P0. Implementar SQLCipher y gestión de claves con Android Keystore.
 - P0. Cifrar archivos de audio y artefactos sensibles en reposo.

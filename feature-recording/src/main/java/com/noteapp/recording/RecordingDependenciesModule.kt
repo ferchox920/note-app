@@ -4,7 +4,8 @@ import android.content.Context
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.SherpaStreamingLabRunner
 import com.noteapp.audio.AudioRecordingController
-import com.noteapp.storage.FileSessionCheckpointStore
+import com.noteapp.storage.NoteAppDatabase
+import com.noteapp.storage.RoomSessionCheckpointStore
 import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.vad.VadComparisonRunner
 import dagger.Module
@@ -26,9 +27,19 @@ object RecordingDependenciesModule {
 
     @Provides
     @Singleton
+    fun provideNoteAppDatabase(
+        @ApplicationContext context: Context,
+    ): NoteAppDatabase = NoteAppDatabase.create(context)
+
+    @Provides
+    @Singleton
     fun provideSessionCheckpointStore(
         @ApplicationContext context: Context,
-    ): SessionCheckpointStore = FileSessionCheckpointStore(File(context.filesDir, "recordings"))
+        database: NoteAppDatabase,
+    ): SessionCheckpointStore = RoomSessionCheckpointStore(
+        File(context.filesDir, "recordings"),
+        database,
+    )
 
     @Provides
     @Singleton

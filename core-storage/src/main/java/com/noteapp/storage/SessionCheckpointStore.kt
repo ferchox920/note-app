@@ -1,76 +1,102 @@
 package com.noteapp.storage
 
 import com.noteapp.domain.RecordingSession
+import com.noteapp.domain.SessionStatus
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 interface SessionCheckpointStore {
     suspend fun findRecoverable(): List<RecordingSession>
     suspend fun findCompleted(): List<RecordingSession>
 }
 
-class FileSessionCheckpointStore(private val recordingsDirectory: java.io.File) : SessionCheckpointStore {
-    override suspend fun findRecoverable(): List<RecordingSession> =
+data class PersistedTranscriptSegment(
+    val startMs: Long,
+    val endMs: Long,
+    val text: String,
+)
+
+data class SessionArtifactSnapshot(
+    val directory: File,
+    val checkpointUpdatedAtEpochMs: Long,
+    val session: RecordingSession,
+    val transcriptModelId: String?,
+    val transcriptSegments: List<PersistedTranscriptSegment>,
+)
+
+class FileSessionArtifactReader(private val recordingsDirectory: File) {
+    fun readAll(): List<SessionArtifactSnapshot> =
         recordingsDirectory.listFiles { file -> file.isDirectory }
             .orEmpty()
-            .mapNotNull(::readRecoverable)
-            .sortedByDescending { it.id }
+            .mapNotNull(::read)
+            .sortedByDescending(SessionArtifactSnapshot::checkpointUpdatedAtEpochMs)
+
+    private fun read(directory: File): SessionArtifactSnapshot? = runCatching {
+        val checkpoint = File(directory, CHECKPOINT_FILE_NAME)
+        if (!checkpoint.isFile) return@runCatching null
+        val json = JSONObject(checkpoint.readText(Charsets.UTF_8))
+        val id = json.getString("sessionId")
+        if (id != directory.name) return@runCatching null
+        val status = enumValueOf<SessionStatus>(json.getString("status"))
+        val transcript = readTranscript(directory)
+        SessionArtifactSnapshot(
+            directory = directory,
+            checkpointUpdatedAtEpochMs = checkpoint.lastModified(),
+            session = RecordingSession(
+                id = id,
+                status = status,
+                durationMs = json.getLong("durationMs"),
+                errorCode = json.optionalString("errorCode"),
+            ),
+            transcriptModelId = transcript?.first,
+            transcriptSegments = transcript?.second.orEmpty(),
+        )
+    }.getOrNull()
+
+    private fun readTranscript(
+        directory: File,
+    ): Pair<String, List<PersistedTranscriptSegment>>? = runCatching {
+        val file = File(directory, TRANSCRIPT_FILE_NAME)
+        if (!file.isFile) return@runCatching null
+        val json = JSONObject(file.readText(Charsets.UTF_8))
+        val items = json.optJSONArray("segments") ?: JSONArray()
+        val segments = List(items.length()) { index ->
+            val item = items.getJSONObject(index)
+            PersistedTranscriptSegment(
+                startMs = item.getLong("startMs"),
+                endMs = item.getLong("endMs"),
+                text = item.getString("text"),
+            )
+        }
+        json.optString("modelId", "unknown") to segments
+    }.getOrNull()
+
+    private fun JSONObject.optionalString(name: String): String? =
+        if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
+
+    private companion object {
+        const val CHECKPOINT_FILE_NAME = "checkpoint.json"
+        const val TRANSCRIPT_FILE_NAME = "incremental-transcript.json"
+    }
+}
+
+class FileSessionCheckpointStore(private val recordingsDirectory: File) : SessionCheckpointStore {
+    override suspend fun findRecoverable(): List<RecordingSession> =
+        FileSessionArtifactReader(recordingsDirectory).readAll()
+            .filter { it.session.status in RECOVERABLE_STATUSES }
+            .map { it.session.copy(status = SessionStatus.RECOVERING) }
 
     override suspend fun findCompleted(): List<RecordingSession> =
-        recordingsDirectory.listFiles { file -> file.isDirectory }
-            .orEmpty()
-            .sortedByDescending { directory ->
-                java.io.File(directory, "checkpoint.json").lastModified()
-            }
-            .mapNotNull(::readCompleted)
-
-    private fun readRecoverable(directory: java.io.File): RecordingSession? = runCatching {
-        val checkpoint = java.io.File(directory, "checkpoint.json")
-        if (!checkpoint.isFile) return@runCatching null
-        val json = checkpoint.readText(Charsets.UTF_8)
-        val id = stringField(json, "sessionId") ?: return@runCatching null
-        if (id != directory.name) return@runCatching null
-        val status = enumValueOf<com.noteapp.domain.SessionStatus>(
-            stringField(json, "status") ?: return@runCatching null,
-        )
-        if (status !in RECOVERABLE_STATUSES) return@runCatching null
-        RecordingSession(
-            id = id,
-            status = com.noteapp.domain.SessionStatus.RECOVERING,
-            durationMs = numericField(json, "durationMs"),
-            errorCode = stringField(json, "errorCode"),
-        )
-    }.getOrNull()
-
-    private fun readCompleted(directory: java.io.File): RecordingSession? = runCatching {
-        val checkpoint = java.io.File(directory, "checkpoint.json")
-        if (!checkpoint.isFile) return@runCatching null
-        val json = checkpoint.readText(Charsets.UTF_8)
-        val id = stringField(json, "sessionId") ?: return@runCatching null
-        if (id != directory.name) return@runCatching null
-        val status = enumValueOf<com.noteapp.domain.SessionStatus>(
-            stringField(json, "status") ?: return@runCatching null,
-        )
-        if (status != com.noteapp.domain.SessionStatus.COMPLETED) return@runCatching null
-        RecordingSession(
-            id = id,
-            status = status,
-            durationMs = numericField(json, "durationMs"),
-            errorCode = null,
-        )
-    }.getOrNull()
-
-    private fun stringField(json: String, name: String): String? =
-        Regex("\\\"${Regex.escape(name)}\\\":\\\"([^\\\"]*)\\\"").find(json)?.groupValues?.get(1)
-
-    private fun numericField(json: String, name: String): Long =
-        requireNotNull(Regex("\\\"${Regex.escape(name)}\\\":(-?\\d+)").find(json)) {
-            "Missing numeric field $name"
-        }.groupValues[1].toLong()
+        FileSessionArtifactReader(recordingsDirectory).readAll()
+            .filter { it.session.status == SessionStatus.COMPLETED }
+            .map(SessionArtifactSnapshot::session)
 
     private companion object {
         val RECOVERABLE_STATUSES = setOf(
-            com.noteapp.domain.SessionStatus.RECORDING,
-            com.noteapp.domain.SessionStatus.PAUSED,
-            com.noteapp.domain.SessionStatus.RECOVERING,
+            SessionStatus.RECORDING,
+            SessionStatus.PAUSED,
+            SessionStatus.RECOVERING,
         )
     }
 }
