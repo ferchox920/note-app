@@ -148,12 +148,61 @@ pero evidentemente degenerada. Cada evento conserva
 `suppressedRepetition=true`; el JSON, el reporte y la UI muestran el total para
 que una omisión protectora nunca sea silenciosa.
 
-## Siguiente medición física controlada
+## Lectura física controlada
 
-1. Compilar e instalar la APK benchmark exacta.
-2. Leer exactamente [`read-aloud-es.txt`](read-aloud-es.txt).
-3. Verificar primer texto, latencia p50/p95, RTF corregido, descartes, conflictos,
-   `reusedResultCount` y WER con `--reference-text`.
-4. Solo después elegir tiny o base para la prueba sostenida de 45 minutos.
+La sesión `282e9873-1c38-4ca7-b9a1-846ee89f37e2` leyó
+[`read-aloud-es.txt`](read-aloud-es.txt) en el S25 Ultra. La captura completó
+111.720 ms sin errores de lectura, discontinuidades, frames estimados como
+perdidos ni errores del pipeline.
 
-No se declara G2 aprobada con pruebas unitarias ni con el benchmark offline de G0.
+El perfil incremental tiny de baja latencia produjo:
+
+- 39 inferencias: 35 parciales y 4 finales;
+- primer texto en 3.163 ms;
+- latencia visible p50 127 ms y p95 154,1 ms;
+- inferencia p50 122 ms y p95 147,2 ms;
+- RTF corregido 0,0422;
+- cero descartes, cero conflictos y cero errores técnicos;
+- 25 de 39 hipótesis suprimidas por repetición;
+- WER 90,45 %.
+
+El rendimiento supera holgadamente los límites de G2, pero la calidad lo invalida.
+La supresión evitó mostrar varios loops, aunque no puede convertir una hipótesis
+degenerada en texto útil.
+
+## Comparación offline sobre el mismo audio
+
+Sin volver a grabar ni cambiar el corpus se ejecutaron los perfiles offline:
+
+| Perfil | Bloque | WER | RTF | Primer texto |
+|---|---:|---:|---:|---:|
+| tiny q5_1 completo | 30 s | 30,34 % | 0,0476 | 1.475 ms |
+| base q5_1 completo | 30 s | 21,91 % | 0,0998 | 2.985 ms |
+| tiny q5_1, contexto recortado | 10 s | 82,02 % | 0,1575 | 5.961 ms |
+| tiny q5_1, contexto de encoder 15 s | 10 s | 30,34 % | 2,3069 | 34.168 ms |
+| tiny q5_1, contexto completo 30 s | 10 s | 28,65 % | 3,9364 | 22.177 ms |
+
+La variante base de 30 s entra en el límite de WER aceptable del documento
+maestro y conserva RTF menor que 1, por lo que es una candidata válida para el
+refinamiento final. El experimento de contexto completo consumió 427.497 ms para
+108.600 ms de audio; 405.661 ms correspondieron al encoder. El contexto de 15 s
+redujo el coste, pero no lo suficiente. Ambos cambios experimentales se
+revirtieron después de medirlos.
+
+## Decisión
+
+Whisper tiny/base con ventanas pseudo-streaming cortas no ha demostrado todavía
+una configuración que cumpla simultáneamente calidad y tiempo real:
+
+- recortar el contexto permite RTF menor que 1, pero destruye la precisión;
+- conservar suficiente contexto recupera un WER cercano al offline, pero supera
+  RTF 2;
+- el modo sin timestamps reduce la latencia a cientos de milisegundos, pero
+  degenera en repeticiones sobre el corpus controlado.
+
+El perfil rápido se conserva únicamente como línea base protegida y observable;
+no se declara G2 aprobada. El refinamiento final debe usar base q5_1 en bloques
+de hasta 30 s. El siguiente experimento de transcripción incremental debe evaluar
+un backend realmente streaming —la ruta de mitigación prevista es Sherpa-ONNX—
+y compararlo contra esta misma lectura antes de iniciar la prueba sostenida de
+45 minutos.

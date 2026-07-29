@@ -217,7 +217,18 @@ iteración usa decodificación incremental sin timestamps internos ni fallbacks 
 temperatura, con límite proporcional de tokens. Su medición física alcanzó primer
 texto en 3,573 s, latencia p95 de 149 ms y RTF 0,044, pero fue rechazada manualmente
 por loops sobre audio ambiente. Se añadió supresión conservadora de repetición y
-una lectura controlada con WER; sigue pendiente ejecutar esa prueba de calidad.
+una lectura controlada con WER.
+
+La lectura controlada `282e9873-1c38-4ca7-b9a1-846ee89f37e2` confirmó captura
+perfecta y rendimiento incremental (primer texto 3,163 s, p95 154 ms, RTF 0,042),
+pero rechazó el perfil rápido por WER 90,45 % y 25 hipótesis repetitivas
+suprimidas. Sobre el mismo audio, el refinamiento offline base q5_1 en bloques de
+30 s obtuvo WER 21,91 % y RTF 0,100. Tiny en bloques de 10 s mostró el intercambio
+no viable del backend pseudo-streaming: WER 82,02 % con contexto recortado, o WER
+28,65–30,34 % con RTF 2,31–3,94 al conservar contexto. G2 continúa pendiente; el
+siguiente experimento será un backend realmente streaming, con Sherpa-ONNX como
+ruta de mitigación, manteniendo Whisper base para refinamiento final. Evidencia:
+[`doc/evidence/sprint-3/incremental-optimization-2026-07-28.md`](doc/evidence/sprint-3/incremental-optimization-2026-07-28.md).
 
 **Backlog prioritario**
 
