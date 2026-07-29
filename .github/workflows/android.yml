@@ -38,11 +38,21 @@ jobs:
             python - <<'PY'
           from pathlib import Path
 
-          tail = "\n".join(
-              Path("gradle-build.log").read_text(encoding="utf-8", errors="replace")
-              .splitlines()[-40:]
-          )
-          escaped = tail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          lines = Path("gradle-build.log").read_text(
+              encoding="utf-8",
+              errors="replace",
+          ).splitlines()
+          markers = [
+              index
+              for index, line in enumerate(lines)
+              if "dependency verification failed" in line.lower()
+          ]
+          if markers:
+              start = max(0, markers[0] - 5)
+              excerpt = "\n".join(lines[start : start + 45])
+          else:
+              excerpt = "\n".join(lines[-40:])
+          escaped = excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
           print(f"::error title=Gradle verification failed::{escaped}")
           PY
           fi
