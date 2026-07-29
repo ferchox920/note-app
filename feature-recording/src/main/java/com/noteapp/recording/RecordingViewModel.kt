@@ -11,6 +11,7 @@ import com.noteapp.domain.RecordingIntent
 import com.noteapp.domain.SessionStatus
 import com.noteapp.domain.RecordingSession
 import com.noteapp.storage.SessionCheckpointStore
+import com.noteapp.storage.ProcessingTelemetryStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
 import com.noteapp.asr.AsrLabConfig
@@ -33,7 +34,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -89,6 +93,7 @@ class RecordingViewModel @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
     private val controller: AudioRecordingController,
     private val checkpointStore: SessionCheckpointStore,
+    private val processingTelemetryStore: ProcessingTelemetryStore,
     private val asrLabRunner: AsrLabRunner,
     private val sherpaStreamingLabRunner: SherpaStreamingLabRunner,
     private val vadComparisonRunner: VadComparisonRunner,
@@ -174,6 +179,7 @@ class RecordingViewModel @Inject constructor(
 
     init {
         refreshInstalledModels()
+        recoverInterruptedProcessingJobs()
         refreshRecoverableSessions()
         refreshCompletedSessions()
     }
@@ -223,16 +229,29 @@ class RecordingViewModel @Inject constructor(
                 streamingResult = null,
                 error = null,
             )
-            runCatching {
-                asrLabRunner.transcribeSession(
+            val jobId = runCatching {
+                processingTelemetryStore.start(sessionId, WHISPER_ASR_JOB)
+            }.getOrElse { failure ->
+                asrState.value = asrState.value.copy(
+                    running = false,
+                    error = failure.message ?: "ASR_JOB_START_FAILED",
+                )
+                return@launch
+            }
+            try {
+                val result = asrLabRunner.transcribeSession(
                     sessionDirectory = File(applicationContext.filesDir, "recordings/$sessionId"),
                     modelFile = File(modelsDirectory, descriptor.fileName),
                     descriptor = descriptor,
                     config = config,
                 )
-            }.onSuccess { result ->
+                processingTelemetryStore.complete(jobId, result.toProcessingMetrics())
                 asrState.value = asrState.value.copy(running = false, result = result)
-            }.onFailure { failure ->
+            } catch (cancellation: CancellationException) {
+                markProcessingJobFailed(jobId, "ASR_CANCELLED")
+                throw cancellation
+            } catch (failure: Throwable) {
+                markProcessingJobFailed(jobId, failure.safeErrorCode("ASR_FAILED"))
                 asrState.value = asrState.value.copy(
                     running = false,
                     error = failure.message ?: "ASR_FAILED",
@@ -253,19 +272,32 @@ class RecordingViewModel @Inject constructor(
                 streamingResult = null,
                 error = null,
             )
-            runCatching {
-                sherpaStreamingLabRunner.transcribeSession(
+            val jobId = runCatching {
+                processingTelemetryStore.start(sessionId, SHERPA_REPLAY_JOB)
+            }.getOrElse { failure ->
+                asrState.value = asrState.value.copy(
+                    running = false,
+                    error = failure.message ?: "ASR_JOB_START_FAILED",
+                )
+                return@launch
+            }
+            try {
+                val result = sherpaStreamingLabRunner.transcribeSession(
                     sessionDirectory = File(applicationContext.filesDir, "recordings/$sessionId"),
                     modelDirectory = File(modelsDirectory, descriptor.directoryName),
                     descriptor = descriptor,
                     config = config,
                 )
-            }.onSuccess { result ->
+                processingTelemetryStore.complete(jobId, result.toProcessingMetrics())
                 asrState.value = asrState.value.copy(
                     running = false,
                     streamingResult = result,
                 )
-            }.onFailure { failure ->
+            } catch (cancellation: CancellationException) {
+                markProcessingJobFailed(jobId, "ASR_CANCELLED")
+                throw cancellation
+            } catch (failure: Throwable) {
+                markProcessingJobFailed(jobId, failure.safeErrorCode("STREAMING_ASR_FAILED"))
                 asrState.value = asrState.value.copy(
                     running = false,
                     error = failure.message ?: "STREAMING_ASR_FAILED",
@@ -273,6 +305,17 @@ class RecordingViewModel @Inject constructor(
             }
         }
     }
+
+    private suspend fun markProcessingJobFailed(jobId: String, errorCode: String) {
+        withContext(NonCancellable) {
+            runCatching {
+                processingTelemetryStore.fail(jobId, errorCode)
+            }
+        }
+    }
+
+    private fun Throwable.safeErrorCode(fallback: String): String =
+        message?.takeIf { it.matches(Regex("[A-Z][A-Z0-9_]{2,79}")) } ?: fallback
 
     fun recoverSession(sessionId: String) {
         controller.recover(sessionId)
@@ -352,6 +395,12 @@ class RecordingViewModel @Inject constructor(
             }
         }
         asrState.value = asrState.value.copy(installedModelIds = installed)
+    }
+
+    private fun recoverInterruptedProcessingJobs() {
+        viewModelScope.launch {
+            processingTelemetryStore.recoverInterrupted()
+        }
     }
 
     private fun refreshRecoverableSessions() {

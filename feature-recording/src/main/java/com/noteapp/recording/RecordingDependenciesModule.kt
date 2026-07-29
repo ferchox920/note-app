@@ -5,6 +5,8 @@ import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.SherpaStreamingLabRunner
 import com.noteapp.audio.AudioRecordingController
 import com.noteapp.storage.NoteAppDatabase
+import com.noteapp.storage.ProcessingTelemetryStore
+import com.noteapp.storage.RoomProcessingTelemetryStore
 import com.noteapp.storage.RoomSessionCheckpointStore
 import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.vad.VadComparisonRunner
@@ -40,6 +42,12 @@ object RecordingDependenciesModule {
         File(context.filesDir, "recordings"),
         database,
     )
+
+    @Provides
+    @Singleton
+    fun provideProcessingTelemetryStore(
+        database: NoteAppDatabase,
+    ): ProcessingTelemetryStore = RoomProcessingTelemetryStore(database)
 
     @Provides
     @Singleton

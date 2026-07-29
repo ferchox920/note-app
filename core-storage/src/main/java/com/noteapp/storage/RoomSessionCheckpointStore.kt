@@ -51,6 +51,26 @@ class RoomSessionCheckpointStore(
                         },
                     )
                 }
+                database.sessionMetricDao().deleteBySessionAndPhase(
+                    snapshot.session.id,
+                    INCREMENTAL_SUMMARY_PHASE,
+                )
+                if (snapshot.transcriptMetrics.isNotEmpty()) {
+                    database.sessionMetricDao().insertAll(
+                        snapshot.transcriptMetrics.map { metric ->
+                            SessionMetricEntity(
+                                sessionId = snapshot.session.id,
+                                observedAtEpochMs = snapshot.checkpointUpdatedAtEpochMs,
+                                metricName = metric.name,
+                                value = metric.value,
+                                unit = metric.unit,
+                                phase = INCREMENTAL_SUMMARY_PHASE,
+                                runtime = metric.runtime,
+                                delegate = metric.delegate,
+                            )
+                        },
+                    )
+                }
             }
         }
     }
@@ -74,6 +94,7 @@ class RoomSessionCheckpointStore(
     )
 
     private companion object {
+        const val INCREMENTAL_SUMMARY_PHASE = "incremental_summary"
         val RECOVERABLE_STATUSES = listOf(
             SessionStatus.RECORDING,
             SessionStatus.PAUSED,

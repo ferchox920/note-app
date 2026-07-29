@@ -159,18 +159,76 @@ interface TranscriptSegmentDao {
 interface NoteDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(note: NoteEntity)
+
+    @Query("SELECT * FROM notes WHERE sessionId = :sessionId ORDER BY generatedAtEpochMs DESC")
+    suspend fun findBySession(sessionId: String): List<NoteEntity>
+
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun deleteById(id: String)
 }
 
 @Dao
 interface ProcessingJobDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(job: ProcessingJobEntity)
+
+    @Query("SELECT * FROM processing_jobs WHERE id = :id")
+    suspend fun findById(id: String): ProcessingJobEntity?
+
+    @Query(
+        """
+        SELECT * FROM processing_jobs
+        WHERE sessionId = :sessionId
+        ORDER BY startedAtEpochMs DESC
+        """,
+    )
+    suspend fun findBySession(sessionId: String): List<ProcessingJobEntity>
+
+    @Query(
+        """
+        UPDATE processing_jobs
+        SET state = :state, endedAtEpochMs = :endedAtEpochMs, errorCode = :errorCode
+        WHERE id = :id
+        """,
+    )
+    suspend fun finish(
+        id: String,
+        state: String,
+        endedAtEpochMs: Long,
+        errorCode: String?,
+    ): Int
+
+    @Query(
+        """
+        UPDATE processing_jobs
+        SET state = :failedState, endedAtEpochMs = :endedAtEpochMs, errorCode = :errorCode
+        WHERE state = :runningState
+        """,
+    )
+    suspend fun failAllRunning(
+        runningState: String,
+        failedState: String,
+        endedAtEpochMs: Long,
+        errorCode: String,
+    ): Int
 }
 
 @Dao
 interface SessionMetricDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(metrics: List<SessionMetricEntity>)
+
+    @Query(
+        """
+        SELECT * FROM session_metrics
+        WHERE sessionId = :sessionId
+        ORDER BY observedAtEpochMs, id
+        """,
+    )
+    suspend fun findBySession(sessionId: String): List<SessionMetricEntity>
+
+    @Query("DELETE FROM session_metrics WHERE sessionId = :sessionId AND phase = :phase")
+    suspend fun deleteBySessionAndPhase(sessionId: String, phase: String)
 }
 
 @Database(

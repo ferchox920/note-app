@@ -50,6 +50,8 @@ class FileSessionCheckpointStoreTest {
             {
               "schemaVersion": 5,
               "modelId": "sherpa-es",
+              "partialCount": 14,
+              "lastRealTimeFactor": 0.09,
               "segments": [
                 {"startMs": 0, "endMs": 2500, "text": "primera frase"},
                 {"startMs": 2500, "endMs": 8000, "text": "texto con \"comillas\""}
@@ -64,6 +66,14 @@ class FileSessionCheckpointStoreTest {
         assertEquals(2, snapshot.transcriptSegments.size)
         assertEquals(2_500, snapshot.transcriptSegments[1].startMs)
         assertEquals("texto con \"comillas\"", snapshot.transcriptSegments[1].text)
+        assertEquals(
+            listOf("LAST_REAL_TIME_FACTOR", "PARTIAL_COUNT"),
+            snapshot.transcriptMetrics.map { it.name },
+        )
+        assertEquals(
+            setOf("incremental_summary"),
+            snapshot.transcriptMetrics.mapNotNull { it.phase }.toSet(),
+        )
     }
 
     private fun writeCheckpoint(

@@ -23,6 +23,13 @@ data class SessionArtifactSnapshot(
     val session: RecordingSession,
     val transcriptModelId: String?,
     val transcriptSegments: List<PersistedTranscriptSegment>,
+    val transcriptMetrics: List<PersistedProcessingMetric>,
+)
+
+private data class PersistedTranscriptArtifact(
+    val modelId: String,
+    val segments: List<PersistedTranscriptSegment>,
+    val metrics: List<PersistedProcessingMetric>,
 )
 
 class FileSessionArtifactReader(private val recordingsDirectory: File) {
@@ -49,14 +56,15 @@ class FileSessionArtifactReader(private val recordingsDirectory: File) {
                 durationMs = json.getLong("durationMs"),
                 errorCode = json.optionalString("errorCode"),
             ),
-            transcriptModelId = transcript?.first,
-            transcriptSegments = transcript?.second.orEmpty(),
+            transcriptModelId = transcript?.modelId,
+            transcriptSegments = transcript?.segments.orEmpty(),
+            transcriptMetrics = transcript?.metrics.orEmpty(),
         )
     }.getOrNull()
 
     private fun readTranscript(
         directory: File,
-    ): Pair<String, List<PersistedTranscriptSegment>>? = runCatching {
+    ): PersistedTranscriptArtifact? = runCatching {
         val file = File(directory, TRANSCRIPT_FILE_NAME)
         if (!file.isFile) return@runCatching null
         val json = JSONObject(file.readText(Charsets.UTF_8))
@@ -69,11 +77,72 @@ class FileSessionArtifactReader(private val recordingsDirectory: File) {
                 text = item.getString("text"),
             )
         }
-        json.optString("modelId", "unknown") to segments
+        val modelId = json.optString("modelId", "unknown")
+        val runtime = if (modelId.startsWith("sherpa", ignoreCase = true)) {
+            "sherpa-onnx"
+        } else {
+            "whisper.cpp"
+        }
+        PersistedTranscriptArtifact(
+            modelId = modelId,
+            segments = segments,
+            metrics = buildList {
+                json.optionalLong("timeToFirstTextMs")?.let {
+                    addSummaryMetric("TIME_TO_FIRST_TEXT_MS", it.toDouble(), "ms", runtime)
+                }
+                json.optionalLong("lastVisibleLatencyMs")?.let {
+                    addSummaryMetric("LAST_VISIBLE_LATENCY_MS", it.toDouble(), "ms", runtime)
+                }
+                json.optionalDouble("lastRealTimeFactor")?.let {
+                    addSummaryMetric("LAST_REAL_TIME_FACTOR", it, "ratio", runtime)
+                }
+                json.optionalLong("partialCount")?.let {
+                    addSummaryMetric("PARTIAL_COUNT", it.toDouble(), "count", runtime)
+                }
+                json.optionalLong("droppedPartialCount")?.let {
+                    addSummaryMetric("DROPPED_PARTIAL_COUNT", it.toDouble(), "count", runtime)
+                }
+                json.optionalLong("stableConflictCount")?.let {
+                    addSummaryMetric("STABLE_CONFLICT_COUNT", it.toDouble(), "count", runtime)
+                }
+                json.optionalLong("suppressedRepetitionCount")?.let {
+                    addSummaryMetric(
+                        "SUPPRESSED_REPETITION_COUNT",
+                        it.toDouble(),
+                        "count",
+                        runtime,
+                    )
+                }
+            },
+        )
     }.getOrNull()
 
     private fun JSONObject.optionalString(name: String): String? =
         if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
+
+    private fun JSONObject.optionalLong(name: String): Long? =
+        if (!has(name) || isNull(name)) null else getLong(name)
+
+    private fun JSONObject.optionalDouble(name: String): Double? =
+        if (!has(name) || isNull(name)) null else getDouble(name)
+
+    private fun MutableList<PersistedProcessingMetric>.addSummaryMetric(
+        name: String,
+        value: Double,
+        unit: String,
+        runtime: String,
+    ) {
+        add(
+            PersistedProcessingMetric(
+                name = name,
+                value = value,
+                unit = unit,
+                phase = "incremental_summary",
+                runtime = runtime,
+                delegate = "cpu",
+            ),
+        )
+    }
 
     private companion object {
         const val CHECKPOINT_FILE_NAME = "checkpoint.json"

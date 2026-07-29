@@ -30,9 +30,24 @@ de la implementación. Referencia oficial:
   reemplaza únicamente sus segmentos finales y conserva los archivos originales.
 - `@Upsert` para sesiones, evitando la semántica `REPLACE` de SQLite que podría
   disparar un borrado en cascada de registros relacionados.
+- Consultas de sesión para notas, trabajos y métricas, además de borrado
+  individual de notas; la clave foránea elimina todos los registros asociados
+  cuando se elimina su sesión.
+- `RoomProcessingTelemetryStore` con estados `RUNNING`, `COMPLETED` y `FAILED`.
+  La finalización del trabajo y la inserción de sus métricas ocurren en una sola
+  transacción.
+- Los replays Whisper y Sherpa crean trabajos reales y persisten duración,
+  inferencia, tiempo a primer texto, RTF, memoria, temperatura y contadores
+  operativos. El texto transcripto no forma parte de estas métricas.
+- Los trabajos que permanecieron `RUNNING` al morir el proceso se convierten
+  idempotentemente en `FAILED / PROCESS_INTERRUPTED` durante el siguiente
+  arranque.
+- La reindexación importa un resumen acotado de la telemetría incremental
+  existente y reemplaza solo la fase `incremental_summary`, sin duplicarla ni
+  tocar métricas de postproceso.
 
 Los segmentos guardan secuencia, timestamps, texto estable/final y modelo de
-origen. El índice no importa todavía el journal completo de telemetría: hacerlo
+origen. El índice no importa el journal completo de telemetría: hacerlo
 en cada arranque aumentaría innecesariamente E/S y memoria en sesiones largas.
 
 ## Validación
@@ -40,10 +55,13 @@ en cada arranque aumentaría innecesariamente E/S y memoria en sesiones largas.
 Dispositivo físico:
 
 - Samsung Galaxy S25 Ultra `SM-S938B`, Android API 36.
-- `:core-storage:connectedDebugAndroidTest`: 3/3 pruebas aprobadas.
+- `:core-storage:connectedDebugAndroidTest`: 7/7 pruebas aprobadas.
 - Cobertura: orden y reemplazo de segmentos, actualización de una sesión sin
-  perder relaciones, borrado en cascada y reindexación idempotente desde
-  artefactos.
+  perder relaciones, cascada de segmentos/notas/trabajos/métricas, reindexación
+  idempotente, finalización atómica de telemetría, rollback ante métricas
+  inválidas y recuperación idempotente de trabajos interrumpidos.
+- Pruebas JVM del mapeo Whisper/Sherpa confirman que se preservan las métricas
+  operativas y que no se copia contenido de la transcripción.
 - APK debug instalada y abierta correctamente.
 - La app creó `note-app.db`, sus archivos WAL/SHM y mantuvo visibles los
   directorios de las sesiones existentes.
@@ -56,8 +74,13 @@ Regresión:
 
 ## Estado y límites
 
-Esta evidencia no aprueba G3 ni afirma cifrado en reposo. La historia Room sigue
-abierta hasta conectar la escritura funcional de notas, trabajos y métricas.
-También permanecen pendientes DataStore, SQLCipher/Keystore, cifrado de
-artefactos, borrado verificable completo y las pruebas reproducibles de cierre
-forzado/reinicio exigidas por Sprint 4.
+El P0 de infraestructura Room queda completo para las cinco entidades. El DAO
+de notas está listo, pero la generación y edición de su contenido pertenecen a
+los Sprints 6 y 5 respectivamente. Por decisión del usuario, esta validación no
+ejecutó una nueva grabación ni un nuevo replay ASR; validó la integración con
+pruebas JVM/instrumentadas y el arranque sobre los artefactos existentes.
+
+Esta evidencia no aprueba G3 ni afirma cifrado en reposo. Permanecen pendientes
+DataStore, SQLCipher/Keystore, cifrado de artefactos, borrado verificable
+completo y las pruebas reproducibles de cierre forzado/reinicio exigidas por
+Sprint 4.
