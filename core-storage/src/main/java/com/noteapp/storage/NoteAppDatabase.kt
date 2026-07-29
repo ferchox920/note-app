@@ -13,6 +13,8 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Room
 import androidx.room.Upsert
+import com.noteapp.security.DatabasePassphraseProvider
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Entity(tableName = "sessions")
 data class SessionEntity(
@@ -250,10 +252,35 @@ abstract class NoteAppDatabase : RoomDatabase() {
     abstract fun sessionMetricDao(): SessionMetricDao
 
     companion object {
-        fun create(context: Context): NoteAppDatabase = Room.databaseBuilder(
-            context.applicationContext,
-            NoteAppDatabase::class.java,
-            "note-app.db",
-        ).build()
+        const val DATABASE_NAME = "note-app.db"
+
+        fun create(
+            context: Context,
+            passphraseProvider: DatabasePassphraseProvider,
+        ): NoteAppDatabase {
+            System.loadLibrary("sqlcipher")
+            val applicationContext = context.applicationContext
+            val databaseFile = applicationContext.getDatabasePath(DATABASE_NAME)
+            if (
+                databaseFile.exists() &&
+                !SqlCipherDatabaseMigration.isPlaintext(databaseFile) &&
+                !passphraseProvider.hasStoredPassphrase()
+            ) {
+                throw SecurityException("ENCRYPTED_DATABASE_KEY_MATERIAL_MISSING")
+            }
+            val passphrase = passphraseProvider.getOrCreatePassphrase()
+            return try {
+                SqlCipherDatabaseMigration.prepare(databaseFile, passphrase)
+                Room.databaseBuilder(
+                    applicationContext,
+                    NoteAppDatabase::class.java,
+                    DATABASE_NAME,
+                )
+                    .openHelperFactory(SupportOpenHelperFactory(passphrase.copyOf()))
+                    .build()
+            } finally {
+                passphrase.fill(0)
+            }
+        }
     }
 }

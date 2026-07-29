@@ -72,6 +72,8 @@ El P0 de DataStore queda completo para las preferencias no relacionales que
 existen hoy. No se añadieron flags especulativos de biometría o retención porque
 todavía no tienen comportamiento asociado.
 
-Esta evidencia no aprueba G3 ni afirma cifrado en reposo. Continúan pendientes
-SQLCipher/Keystore, cifrado de audio y artefactos sensibles, recuperación
-integral ante fallos, borrado verificable y BiometricPrompt.
+Esta evidencia no aprueba G3 ni afirma por sí sola cifrado en reposo.
+SQLCipher/Keystore se completó posteriormente y tiene evidencia separada en
+`sqlcipher-keystore-2026-07-29.md`. Continúan pendientes el cifrado de audio y
+artefactos sensibles, la recuperación integral ante fallos, el borrado
+verificable y BiometricPrompt.

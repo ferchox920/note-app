@@ -34,6 +34,7 @@ include(
     ":benchmark",
     ":core-audio",
     ":core-domain",
+    ":core-security",
     ":core-storage",
     ":feature-recording",
     ":inference-asr",

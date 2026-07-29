@@ -20,6 +20,7 @@ android {
 dependencies {
     implementation(project(":core-audio"))
     implementation(project(":core-domain"))
+    implementation(project(":core-security"))
     implementation(project(":core-storage"))
     implementation(project(":inference-asr"))
     implementation(project(":inference-vad"))

@@ -23,10 +23,12 @@ android {
 
 dependencies {
     implementation(project(":core-domain"))
+    implementation(project(":core-security"))
     implementation(libs.androidx.room.ktx)
     api(libs.androidx.room.runtime)
     implementation(libs.androidx.datastore)
     implementation(libs.protobuf.kotlin.lite)
+    implementation(libs.sqlcipher.android)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.json.java)

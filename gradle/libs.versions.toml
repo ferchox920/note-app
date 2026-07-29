@@ -18,6 +18,7 @@ androidxTestRunner = "1.7.0"
 ksp = "2.2.21-2.0.5"
 navigation = "2.9.8"
 room = "2.8.4"
+sqlCipher = "4.17.0"
 protobuf = "4.32.1"
 protobufPlugin = "0.9.5"
 sherpaOnnx = "1.13.4"
@@ -49,6 +50,7 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
+sqlcipher-android = { module = "net.zetetic:sqlcipher-android", version.ref = "sqlCipher" }
 protobuf-kotlin-lite = { module = "com.google.protobuf:protobuf-kotlin-lite", version.ref = "protobuf" }
 protobuf-protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 sherpa-onnx = { module = "com.k2fsa:sherpa-onnx", version.ref = "sherpaOnnx" }

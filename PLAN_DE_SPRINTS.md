@@ -317,6 +317,13 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
   forzado validada en S25 Ultra. Véase
   [`doc/evidence/sprint-4/proto-datastore-2026-07-29.md`](doc/evidence/sprint-4/proto-datastore-2026-07-29.md).
 - P0. Implementar SQLCipher y gestión de claves con Android Keystore.
+  **Completado (2026-07-29):** Room opera sobre SQLCipher 4.17.0 con una clave
+  aleatoria de 256 bits protegida por AES-256-GCM en Android Keystore. Incluye
+  migración atómica de bases SQLite existentes, recuperación de intercambios
+  interrumpidos, verificación de integridad y fallo cerrado ante clave ausente
+  o alterada. La migración de los datos reales y el segundo arranque fueron
+  validados en S25 Ultra sin grabar ni retranscribir. Véase
+  [`doc/evidence/sprint-4/sqlcipher-keystore-2026-07-29.md`](doc/evidence/sprint-4/sqlcipher-keystore-2026-07-29.md).
 - P0. Cifrar archivos de audio y artefactos sensibles en reposo.
 - P0. Implementar recuperación idempotente tras cierre forzado o reinicio.
 - P0. Implementar escrituras atómicas, checksums y limpieza controlada de temporales.

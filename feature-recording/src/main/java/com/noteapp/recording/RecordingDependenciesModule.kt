@@ -4,6 +4,8 @@ import android.content.Context
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.SherpaStreamingLabRunner
 import com.noteapp.audio.AudioRecordingController
+import com.noteapp.security.AndroidKeystoreDatabasePassphraseProvider
+import com.noteapp.security.DatabasePassphraseProvider
 import com.noteapp.storage.NoteAppDatabase
 import com.noteapp.storage.AppPreferencesStore
 import com.noteapp.storage.ProcessingTelemetryStore
@@ -31,9 +33,17 @@ object RecordingDependenciesModule {
 
     @Provides
     @Singleton
+    fun provideDatabasePassphraseProvider(
+        @ApplicationContext context: Context,
+    ): DatabasePassphraseProvider =
+        AndroidKeystoreDatabasePassphraseProvider(context)
+
+    @Provides
+    @Singleton
     fun provideNoteAppDatabase(
         @ApplicationContext context: Context,
-    ): NoteAppDatabase = NoteAppDatabase.create(context)
+        passphraseProvider: DatabasePassphraseProvider,
+    ): NoteAppDatabase = NoteAppDatabase.create(context, passphraseProvider)
 
     @Provides
     @Singleton
