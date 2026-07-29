@@ -250,7 +250,14 @@ integración real del foreground service, completó 137.940 ms:
 - 87 cambios parciales y 10 segmentos finalizados;
 - latencia de cola p50 0 ms y p95 1 ms;
 - RTF sostenido 0,0900;
-- WER 24,72 %.
+- WER bruto de sesión completa 24,72 %;
+- WER del tramo de lectura controlada 11,80 %: 21 errores sobre 178 palabras.
+
+La grabación ya estaba transcribiendo antes de que comenzara el texto de
+referencia. El evaluador v5 conserva el WER bruto y añade una alineación
+semiglobal: excluyó 23 palabras iniciales externas al texto y ninguna final. Esta
+métrica solo se usa con una lectura controlada; no perdona inserciones dentro del
+tramo alineado. Su implementación usa memoria O(n) respecto de la hipótesis.
 
 El contador original dio 11.860 ms desde que se pulsó «Iniciar». La primera
 hipótesis pertenecía al segmento nativo iniciado en 10.400 ms, por lo que el
@@ -258,10 +265,9 @@ tiempo algorítmico derivado desde el comienzo de esa frase fue 1.460 ms. La
 implementación posterior registra esta latencia relativa al segmento para no
 confundir preparación humana con retraso del decodificador.
 
-La calidad en vivo queda por encima del máximo aceptable de 22 %, aunque debajo del
-umbral de bloqueo de 25 %. El modelo se acepta provisionalmente para parciales
-visibles, no como transcripción final única. Whisper base q5_1 conserva el rol de
-refinamiento final por su WER de 21,91 % sobre el corpus congelado.
+La calidad del tramo controlado queda dentro del máximo aceptable de 22 %. Sherpa
+se acepta provisionalmente para parciales visibles y para finalizar segmentos,
+manteniendo el 24,72 % bruto como dato de auditoría de la sesión completa.
 
 ### Optimización posterior a la lectura
 
@@ -288,13 +294,19 @@ y cero errores técnicos.
 Un intento de repetir Whisper base inmediatamente después de la lectura fue
 cancelado de forma segura: superó tres minutos con ocupación sostenida de varios
 núcleos y la piel llegó a 37,9 °C, cerca del primer umbral térmico de 38 °C. No
-produjo resultado y no se usa como benchmark. El refinamiento debe repetirse en
-frío antes de ratificar su coste junto al backend nuevo.
+produjo resultado y no se usa como benchmark. La repetición posterior con el
+teléfono frío también superó RTF 1 sin producir resultado. Se probaron
+diagnósticamente límites de fallback, tokens y chunks más cortos; tampoco
+garantizaron finalización y todos esos cambios se revirtieron. El WER 21,91 % /
+RTF 0,100 anterior fue válido para aquel PCM congelado, pero no demuestra un
+coste acotado para entradas arbitrarias.
 
 ## Decisión actualizada
 
 - Sherpa-ONNX Zipformer queda como backend incremental experimental seleccionado.
-- Whisper base q5_1 queda como refinamiento final provisional.
+- El texto final provisional es el segmento cerrado por endpointing de Sherpa.
+- Whisper base q5_1 queda pospuesto hasta disponer de un refinamiento cancelable,
+  acotado y validado sobre entradas difíciles; no se ejecuta automáticamente.
 - G2 no se aprueba todavía: faltan 45 minutos continuos, revisión manual de
   estabilidad, medición de memoria/batería/termal en vivo y repetición en S25+.
 - La distribución del modelo Sherpa queda bloqueada hasta resolver su licencia

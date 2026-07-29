@@ -71,6 +71,55 @@ def word_error_rate(reference: str, hypothesis: str) -> float | None:
     return previous[-1] / len(expected)
 
 
+def reference_span_word_error(reference: str, hypothesis: str) -> dict[str, int | float] | None:
+    """Align a controlled reference while ignoring only external hypothesis words.
+
+    Audio captured before/after a read-aloud prompt is not part of its ground
+    truth. This semi-global alignment keeps every internal insertion penalized
+    while reporting how many leading/trailing words were excluded.
+    """
+    expected = normalized_words(reference)
+    actual = normalized_words(hypothesis)
+    if not expected:
+        return None
+    columns = len(actual) + 1
+    previous_distances = [0] * columns
+    previous_starts = list(range(columns))
+    for row, expected_word in enumerate(expected, start=1):
+        current_distances = [row] + [0] * len(actual)
+        current_starts = [0] * columns
+        for column, actual_word in enumerate(actual, start=1):
+            candidates = (
+                (
+                    previous_distances[column - 1] + (expected_word != actual_word),
+                    0,
+                    previous_starts[column - 1],
+                ),
+                (previous_distances[column] + 1, 1, previous_starts[column]),
+                (current_distances[column - 1] + 1, 2, current_starts[column - 1]),
+            )
+            cost, _, start = min(candidates, key=lambda candidate: candidate[:2])
+            current_distances[column] = cost
+            current_starts[column] = start
+        previous_distances = current_distances
+        previous_starts = current_starts
+
+    end = min(
+        range(columns),
+        key=lambda column: (previous_distances[column], len(actual) - column),
+    )
+    start = previous_starts[end]
+    errors = previous_distances[end]
+    return {
+        "wordErrorRate": errors / len(expected),
+        "errorCount": errors,
+        "referenceWordCount": len(expected),
+        "hypothesisSpanWordCount": end - start,
+        "leadingExcludedWordCount": start,
+        "trailingExcludedWordCount": len(actual) - end,
+    }
+
+
 def summarize_session(
     data: dict,
     source: str = "",
@@ -103,7 +152,12 @@ def summarize_session(
         )
         for name in ("sampleMs", "encodeMs", "decodeMs", "batchMs", "promptMs")
     }
-    wer = word_error_rate(reference_text, data.get("stableText", "")) if reference_text else None
+    transcript = data.get("stableText", "")
+    wer = word_error_rate(reference_text, transcript) if reference_text else None
+    reference_span = (
+        reference_span_word_error(reference_text, transcript)
+        if reference_text else None
+    )
     return {
         "source": source,
         "modelId": data["modelId"],
@@ -129,6 +183,24 @@ def summarize_session(
         "automaticThresholds": automatic_thresholds,
         "eligibleForManualG2Review": all(automatic_thresholds.values()),
         "wordErrorRate": wer,
+        "referenceSpanWordErrorRate": (
+            reference_span["wordErrorRate"] if reference_span else None
+        ),
+        "referenceSpanErrorCount": (
+            reference_span["errorCount"] if reference_span else None
+        ),
+        "referenceWordCount": (
+            reference_span["referenceWordCount"] if reference_span else None
+        ),
+        "referenceSpanHypothesisWordCount": (
+            reference_span["hypothesisSpanWordCount"] if reference_span else None
+        ),
+        "leadingExcludedWordCount": (
+            reference_span["leadingExcludedWordCount"] if reference_span else None
+        ),
+        "trailingExcludedWordCount": (
+            reference_span["trailingExcludedWordCount"] if reference_span else None
+        ),
     }
 
 
@@ -146,6 +218,11 @@ def aggregate_sessions(rows: list[dict[str, object]]) -> dict[str, dict[str, obj
             for row in selected
             if row.get("wordErrorRate") is not None
         ]
+        reference_span_word_error_rates = [
+            float(row["referenceSpanWordErrorRate"])
+            for row in selected
+            if row.get("referenceSpanWordErrorRate") is not None
+        ]
         result[f"{model}|{pipeline}"] = {
             "modelId": model,
             "capturePipelineId": pipeline,
@@ -161,6 +238,10 @@ def aggregate_sessions(rows: list[dict[str, object]]) -> dict[str, dict[str, obj
             ),
             "allEligibleForManualG2Review": all(bool(row["eligibleForManualG2Review"]) for row in selected),
             "worstSessionWordErrorRate": max(word_error_rates) if word_error_rates else None,
+            "worstSessionReferenceSpanWordErrorRate": (
+                max(reference_span_word_error_rates)
+                if reference_span_word_error_rates else None
+            ),
         }
     return result
 
@@ -191,8 +272,14 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     report = {
-        "schemaVersion": 4,
-        "note": "Automatic thresholds do not approve G2; manual duplication and capture-stability review remains required.",
+        "schemaVersion": 5,
+        "note": (
+            "wordErrorRate scores the complete captured transcript. "
+            "referenceSpanWordErrorRate is only for controlled read-aloud prompts: "
+            "it may exclude leading/trailing hypothesis words outside the prompt, "
+            "but still penalizes every internal error. Automatic thresholds do not "
+            "approve G2; manual duplication and capture-stability review remains required."
+        ),
         "configurations": aggregate_sessions(rows),
         "sessions": rows,
     }

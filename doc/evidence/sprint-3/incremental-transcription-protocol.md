@@ -63,6 +63,13 @@ python .\tools\evaluate_incremental.py `
 
 La salida `incremental-evaluation.json`/CSV agrupa por modelo y pipeline, informa
 p50/p95, peor sesión, descartes, conflictos y WER cuando existe referencia.
+`wordErrorRate` compara el texto completo capturado. Para una lectura controlada,
+`referenceSpanWordErrorRate` alinea la referencia contra el mejor tramo de la
+hipótesis: puede excluir únicamente palabras externas al principio o al final,
+que quedan cuantificadas en `leadingExcludedWordCount` y
+`trailingExcludedWordCount`; todas las inserciones internas siguen contando como
+error. Esta segunda métrica no debe usarse para conversación libre ni para
+recortar selectivamente partes difíciles.
 `eligibleForManualG2Review` significa
 solamente que supera umbrales automáticos; nunca aprueba G2 sin revisar estabilidad
 de captura y duplicaciones.

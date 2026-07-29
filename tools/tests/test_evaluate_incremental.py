@@ -16,6 +16,7 @@ SPEC.loader.exec_module(MODULE)
 aggregate_sessions = MODULE.aggregate_sessions
 covered_audio_duration_ms = MODULE.covered_audio_duration_ms
 percentile = MODULE.percentile
+reference_span_word_error = MODULE.reference_span_word_error
 summarize_session = MODULE.summarize_session
 word_error_rate = MODULE.word_error_rate
 
@@ -29,6 +30,17 @@ class EvaluateIncrementalTest(unittest.TestCase):
                 "hola cómo estás mañana",
             ),
         )
+
+    def test_reference_span_ignores_only_leading_and_trailing_words(self):
+        aligned = reference_span_word_error(
+            "esta es la prueba",
+            "ruido previo esta es palabra la prueba ruido final",
+        )
+
+        self.assertIsNotNone(aligned)
+        self.assertEqual(0.25, aligned["wordErrorRate"])
+        self.assertEqual(2, aligned["leadingExcludedWordCount"])
+        self.assertEqual(2, aligned["trailingExcludedWordCount"])
 
     def test_percentile_interpolates_sorted_values(self):
         self.assertEqual(25.0, percentile([40, 10, 20, 30], 0.50))
@@ -156,7 +168,11 @@ class EvaluateIncrementalTest(unittest.TestCase):
             )
 
             self.assertEqual(0, completed.returncode, completed.stderr)
-            self.assertTrue((output / "incremental-evaluation.json").is_file())
+            report = json.loads(
+                (output / "incremental-evaluation.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(5, report["schemaVersion"])
+            self.assertIn("referenceSpanWordErrorRate", report["sessions"][0])
 
 
 if __name__ == "__main__":
