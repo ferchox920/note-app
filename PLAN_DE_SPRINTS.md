@@ -204,7 +204,10 @@ Auditoría de preparación:
 cobertura temporal única, sin contar dos veces ventanas solapadas. El coordinador
 reutiliza una hipótesis parcial únicamente cuando la ventana final es exactamente
 la misma y el pre-roll usa un ring buffer primitivo sin boxing por muestra. Las
-pruebas deterministas pasan; falta benchmark físico incremental antes de elegir
+pruebas deterministas pasan. El baseline físico tiny de 125,66 s mantuvo la
+captura perfecta, pero falló G2 con RTF 1,896, latencia p95 8,162 s y overflow
+de finales. La segunda iteración conserva el VAD de evidencia y coalesce para ASR
+las pausas menores a 1 s; falta repetir el benchmark físico antes de elegir
 tiny/base o evaluar G2. Evidencia:
 [`doc/evidence/sprint-3/incremental-optimization-2026-07-28.md`](doc/evidence/sprint-3/incremental-optimization-2026-07-28.md).
 

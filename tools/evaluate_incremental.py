@@ -68,6 +68,14 @@ def summarize_session(data: dict, source: str = "") -> dict[str, object]:
         "sustainedRtfAtMost1": weighted_rtf <= 1.0,
         "noTechnicalError": error_code in (None, ""),
     }
+    native_timing_totals = {
+        name: sum(
+            float(item.get("nativeTimings", {}).get(name, 0.0))
+            for item in metrics
+            if not item.get("reusedResult", False)
+        )
+        for name in ("sampleMs", "encodeMs", "decodeMs", "batchMs", "promptMs")
+    }
     return {
         "source": source,
         "modelId": data["modelId"],
@@ -84,6 +92,7 @@ def summarize_session(data: dict, source: str = "") -> dict[str, object]:
         "coveredAudioDurationMs": covered_audio_ms,
         "totalInferenceDurationMs": inference_ms,
         "reusedResultCount": sum(1 for item in metrics if item.get("reusedResult") is True),
+        "nativeTimingTotalsMs": native_timing_totals,
         "weightedRealTimeFactor": weighted_rtf,
         "droppedPartialCount": int(data.get("droppedPartialCount", 0)),
         "stableConflictCount": int(data.get("stableConflictCount", 0)),
@@ -135,7 +144,7 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     report = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "note": "Automatic thresholds do not approve G2; manual duplication and capture-stability review remains required.",
         "configurations": aggregate_sessions(rows),
         "sessions": rows,

@@ -267,6 +267,7 @@ class AudioCaptureService : Service() {
                     text = result.segments.joinToString(" ") { it.text.trim() }.trim(),
                     inferenceDurationMs = result.inferenceDurationMs,
                     realTimeFactor = result.realTimeFactor,
+                    nativeTimings = result.nativeTimings,
                 )
             },
             initialState = restoredIncrementalState ?: IncrementalAsrState(),

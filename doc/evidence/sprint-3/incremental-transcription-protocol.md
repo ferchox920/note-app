@@ -46,7 +46,8 @@ solamente en la cola provisional. También cubren prioridad de finales, overflow
 explícito, ciclo parcial→final y persistencia del modelo elegido en el checkpoint.
 
 Cada inferencia persiste inicio/fin de ventana, tipo parcial/final, duración de audio,
-tiempo de inferencia, latencia visible, RTF y si reutilizó un resultado idéntico.
+tiempo de inferencia, latencia visible, RTF, tiempos nativos de Whisper y si
+reutilizó un resultado idéntico.
 El RTF sostenido se calcula contra la unión temporal de las ventanas, no contra la
 suma que contaría el overlap varias veces. Después de copiar exclusivamente los
 JSON autorizados a un directorio privado, generar percentiles con:

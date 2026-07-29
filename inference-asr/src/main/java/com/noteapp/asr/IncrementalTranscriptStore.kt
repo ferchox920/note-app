@@ -34,6 +34,15 @@ class IncrementalTranscriptStore {
                 visibleLatencyMs = item.getLong("visibleLatencyMs"),
                 realTimeFactor = item.getDouble("realTimeFactor"),
                 reusedResult = item.optBoolean("reusedResult", false),
+                nativeTimings = item.optJSONObject("nativeTimings")?.let { timings ->
+                    WhisperNativeTimings(
+                        sampleMs = timings.optDouble("sampleMs").toFloat(),
+                        encodeMs = timings.optDouble("encodeMs").toFloat(),
+                        decodeMs = timings.optDouble("decodeMs").toFloat(),
+                        batchMs = timings.optDouble("batchMs").toFloat(),
+                        promptMs = timings.optDouble("promptMs").toFloat(),
+                    )
+                } ?: WhisperNativeTimings(0f, 0f, 0f, 0f, 0f),
             )
         }
         return IncrementalAsrState(
@@ -81,11 +90,18 @@ class IncrementalTranscriptStore {
                     put("visibleLatencyMs", metric.visibleLatencyMs)
                     put("realTimeFactor", metric.realTimeFactor)
                     put("reusedResult", metric.reusedResult)
+                    put("nativeTimings", JSONObject().apply {
+                        put("sampleMs", metric.nativeTimings.sampleMs.toDouble())
+                        put("encodeMs", metric.nativeTimings.encodeMs.toDouble())
+                        put("decodeMs", metric.nativeTimings.decodeMs.toDouble())
+                        put("batchMs", metric.nativeTimings.batchMs.toDouble())
+                        put("promptMs", metric.nativeTimings.promptMs.toDouble())
+                    })
                 })
             }
         }
         val json = JSONObject().apply {
-            put("schemaVersion", 2)
+            put("schemaVersion", 3)
             put("modelId", modelId)
             put("capturePipelineId", capturePipelineId)
             put("language", "es")

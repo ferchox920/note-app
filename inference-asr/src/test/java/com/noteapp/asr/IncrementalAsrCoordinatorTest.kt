@@ -80,6 +80,40 @@ class IncrementalAsrCoordinatorTest {
         coordinator.shutdown(drain = true)
     }
 
+    @Test
+    fun `coalesces a short pause and finalizes only after sustained silence`() = runBlocking {
+        var calls = 0
+        val coordinator = IncrementalAsrCoordinator(
+            scope = this,
+            sampleRateHz = 10,
+            endpointFinalizationGraceMs = 700,
+            transcriber = IncrementalPcmTranscriber { _, _ ->
+                calls++
+                IncrementalInferenceResult(
+                    text = "una frase continua",
+                    inferenceDurationMs = 20,
+                    realTimeFactor = 0.1,
+                )
+            },
+        )
+
+        coordinator.onPcm16(pcm(10), speechActive = true, endpointDetected = false, streamEndMs = 1_000)
+        coordinator.onPcm16(pcm(3), speechActive = false, endpointDetected = true, streamEndMs = 1_300)
+        coordinator.onPcm16(pcm(6), speechActive = false, endpointDetected = false, streamEndMs = 1_900)
+        assertEquals(0, coordinator.state.value.finalizedSegments.size)
+
+        coordinator.onPcm16(pcm(1), speechActive = true, endpointDetected = false, streamEndMs = 2_000)
+        coordinator.onPcm16(pcm(10), speechActive = true, endpointDetected = false, streamEndMs = 3_000)
+        coordinator.onPcm16(pcm(3), speechActive = false, endpointDetected = true, streamEndMs = 3_300)
+        coordinator.onPcm16(pcm(7), speechActive = false, endpointDetected = false, streamEndMs = 4_000)
+
+        val final = withTimeout(2_000) { coordinator.state.first { it.finalizedSegments.size == 1 } }
+        assertEquals("una frase continua", final.stableText)
+        assertEquals(1, calls)
+        assertEquals(4_000L, final.inferenceMetrics.last().audioDurationMs)
+        coordinator.shutdown(drain = true)
+    }
+
     private fun pcm(samples: Int): ByteArray = ByteArray(samples * 2) { index ->
         if (index % 2 == 0) (index / 2).toByte() else 0
     }

@@ -21,7 +21,8 @@ un RTF artificialmente bajo.
 - informa `totalInferenceDurationMs` y `reusedResultCount`;
 - calcula `weightedRealTimeFactor` como inferencia total dividida por cobertura
   temporal única;
-- usa esquema de salida 2.
+- usa esquema de salida 3 e incluye el desglose nativo de sample, encode, decode,
+  batch y prompt por inferencia.
 
 Una prueba de regresión demuestra el caso crítico: dos ventanas idénticas de 4 s
 ya cubren 4.000 ms, no 8.000 ms. Con 5.000 ms de inferencia el RTF correcto es
@@ -68,10 +69,38 @@ Las pruebas cubren wrap-around, descarte de muestras antiguas y limpieza.
 - `:inference-asr:lintDebug`: aprobado.
 - `python -m unittest discover -s tools/tests`: 28 pruebas aprobadas.
 
+## Baseline físico incremental
+
+La sesión autorizada `9f4bd2dd-98fd-4be6-bc7f-d485249f9091`, ejecutada con
+`whisper-tiny-multilingual-q5_1` en el S25 Ultra, capturó 125.660 ms sin errores
+de lectura, discontinuidades ni frames estimados como perdidos. Sobre 70.140 ms
+de cobertura ASR produjo:
+
+- 27 inferencias: 4 parciales y 23 finales;
+- primer texto en 8.103 ms;
+- latencia parcial p50 5.549 ms y p95 8.162 ms;
+- 132.992 ms de inferencia total y RTF corregido 1,896;
+- 21 parciales descartados y `INCREMENTAL_ASR_FINAL_QUEUE_OVERFLOW`;
+- cero conflictos de prefijo estable y cero resultados reutilizados.
+
+El resultado no supera G2. La captura no es el cuello de botella: el VAD cerró
+aproximadamente un segmento cada 3 s y los finales cortos saturaron la cola.
+
+## Segunda iteración
+
+El timeline VAD conserva su hangover de 300 ms, pero el coordinador ASR espera
+700 ms adicionales antes de materializar un final. Si vuelve a detectarse voz
+durante esa gracia, cancela el cierre y continúa la misma ventana. Así se preserva
+la evidencia VAD original mientras se evita invocar Whisper por pausas breves.
+
+`incremental-transcript.json` ahora persiste también los tiempos nativos de
+Whisper por inferencia para separar coste de encoder, decoder y muestreo. La
+reutilización de una ventana marca esos tiempos en cero.
+
 ## Siguiente medición física
 
 1. Compilar e instalar la APK benchmark exacta.
-2. Ejecutar una sesión corta comparable con tiny y habla autorizada.
+2. Ejecutar otra sesión corta comparable con tiny y habla autorizada.
 3. Verificar primer texto, latencia p50/p95, RTF corregido, descartes, conflictos y
    `reusedResultCount`.
 4. Solo después elegir tiny o base para la prueba sostenida de 45 minutos.

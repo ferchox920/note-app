@@ -17,6 +17,13 @@ data class IncrementalInferenceResult(
     val text: String,
     val inferenceDurationMs: Long,
     val realTimeFactor: Double,
+    val nativeTimings: WhisperNativeTimings = WhisperNativeTimings(
+        sampleMs = 0f,
+        encodeMs = 0f,
+        decodeMs = 0f,
+        batchMs = 0f,
+        promptMs = 0f,
+    ),
 )
 
 fun interface IncrementalPcmTranscriber {
@@ -39,6 +46,13 @@ data class IncrementalInferenceMetric(
     val visibleLatencyMs: Long,
     val realTimeFactor: Double,
     val reusedResult: Boolean = false,
+    val nativeTimings: WhisperNativeTimings = WhisperNativeTimings(
+        sampleMs = 0f,
+        encodeMs = 0f,
+        decodeMs = 0f,
+        batchMs = 0f,
+        promptMs = 0f,
+    ),
 )
 
 data class IncrementalAsrState(
@@ -151,6 +165,7 @@ class IncrementalAsrCoordinator(
     scope: CoroutineScope,
     private val transcriber: IncrementalPcmTranscriber,
     private val sampleRateHz: Int = WhisperEngine.SAMPLE_RATE_HZ,
+    private val endpointFinalizationGraceMs: Long = ENDPOINT_FINALIZATION_GRACE_MS,
     private val nanoTime: () -> Long = System::nanoTime,
     initialState: IncrementalAsrState = IncrementalAsrState(),
 ) {
@@ -175,6 +190,11 @@ class IncrementalAsrCoordinator(
     private var segmentActive = false
     private var segmentStartMs = 0L
     private var cachedPartial: CachedPartial? = null
+    private var endpointCandidateMs: Long? = null
+
+    init {
+        require(endpointFinalizationGraceMs >= 0)
+    }
 
     /** Called on the capture thread after VAD processed the same normalized PCM. */
     fun onPcm16(
@@ -191,6 +211,7 @@ class IncrementalAsrCoordinator(
         val samples = decodeLittleEndian(pcm16, length)
         if (!segmentActive && speechActive) {
             segmentActive = true
+            endpointCandidateMs = null
             assembler.reset()
             val buffered = preRoll.snapshot()
             val pcmDurationMs = samples.size * 1_000L / sampleRateHz
@@ -202,7 +223,16 @@ class IncrementalAsrCoordinator(
 
         if (segmentActive) {
             enqueuePartials(assembler.append(samples))
-            if (endpointDetected) enqueueFinal(streamEndMs)
+            if (speechActive) endpointCandidateMs = null
+            if (endpointDetected) endpointCandidateMs = streamEndMs
+            val candidateMs = endpointCandidateMs
+            if (
+                !speechActive &&
+                candidateMs != null &&
+                streamEndMs - candidateMs >= endpointFinalizationGraceMs
+            ) {
+                enqueueFinal(streamEndMs)
+            }
         } else {
             preRoll.append(samples)
         }
@@ -237,6 +267,7 @@ class IncrementalAsrCoordinator(
         if (window != null) offer(window, final = true, streamEndMs = streamEndMs)
         assembler.reset()
         segmentActive = false
+        endpointCandidateMs = null
         preRoll.clear()
     }
 
@@ -333,6 +364,7 @@ class IncrementalAsrCoordinator(
                 visibleLatencyMs = visibleLatencyMs,
                 realTimeFactor = if (reusedResult) 0.0 else result.realTimeFactor,
                 reusedResult = reusedResult,
+                nativeTimings = if (reusedResult) ZERO_NATIVE_TIMINGS else result.nativeTimings,
             )
             current.copy(
                 stableText = stable,
@@ -401,6 +433,8 @@ class IncrementalAsrCoordinator(
     private companion object {
         const val PRE_ROLL_MS = 200
         const val QUEUE_CAPACITY = 2
+        const val ENDPOINT_FINALIZATION_GRACE_MS = 700L
+        val ZERO_NATIVE_TIMINGS = WhisperNativeTimings(0f, 0f, 0f, 0f, 0f)
         const val ERROR_INFERENCE_FAILED = "INCREMENTAL_ASR_INFERENCE_FAILED"
         const val ERROR_FINAL_QUEUE_OVERFLOW = "INCREMENTAL_ASR_FINAL_QUEUE_OVERFLOW"
         const val ERROR_INVALID_TIMELINE = "INCREMENTAL_ASR_INVALID_TIMELINE"
