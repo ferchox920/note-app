@@ -35,6 +35,8 @@ import com.noteapp.domain.SessionStatus
 import com.noteapp.asr.WhisperModelCatalog
 import com.noteapp.asr.WhisperModelDescriptor
 import com.noteapp.asr.AsrLabConfig
+import com.noteapp.asr.SherpaStreamingLabConfig
+import com.noteapp.asr.SherpaStreamingModelCatalog
 import com.noteapp.audio.CapturePipeline
 import java.util.Locale
 
@@ -98,6 +100,11 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
                 ),
             )
         },
+        onTranscribeStreaming = {
+            viewModel.transcribeStreaming(
+                SherpaStreamingLabConfig(threadCount = benchmarkThreadCount),
+            )
+        },
         onSelectLabSession = viewModel::selectLabSession,
         onRecoverSession = viewModel::recoverSession,
         onCompareVad = viewModel::compareVad,
@@ -118,6 +125,7 @@ fun RecordingScreen(
     onStart: (CapturePipeline, String?) -> Unit,
     onImportModel: (WhisperModelDescriptor) -> Unit,
     onTranscribe: (WhisperModelDescriptor) -> Unit,
+    onTranscribeStreaming: () -> Unit,
     onSelectLabSession: (String) -> Unit,
     onRecoverSession: (String) -> Unit,
     onCompareVad: () -> Unit,
@@ -213,6 +221,13 @@ fun RecordingScreen(
                     .forEach { descriptor ->
                         Button(onClick = { onSelectIncrementalModel(descriptor.id) }) {
                             Text(descriptor.fileName.substringAfter("ggml-").substringBefore("-"))
+                        }
+                    }
+                SherpaStreamingModelCatalog.evaluationModels
+                    .filter { it.id in state.installedModelIds }
+                    .forEach { descriptor ->
+                        Button(onClick = { onSelectIncrementalModel(descriptor.id) }) {
+                            Text("Streaming ES (experimental)")
                         }
                     }
             }
@@ -424,6 +439,21 @@ fun RecordingScreen(
                 }
             }
         }
+        val streamingDescriptor = SherpaStreamingModelCatalog.spanishKroko
+        val streamingInstalled = streamingDescriptor.id in state.installedModelIds
+        Button(
+            enabled = streamingInstalled && state.labSessionId != null && !state.asrRunning,
+            onClick = onTranscribeStreaming,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            Text("Transcribir streaming ES")
+        }
+        if (!streamingInstalled) {
+            Text(
+                "Modelo streaming experimental no instalado",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         if (state.asrRunning) Text("Procesando ASR en el dispositivo...")
         state.asrResult?.let { result ->
             Text(
@@ -434,6 +464,17 @@ fun RecordingScreen(
                 modifier = Modifier.padding(top = 12.dp),
             )
             Text(result.nativeSystemInfo, style = MaterialTheme.typography.bodySmall)
+            Text(result.transcript.ifBlank { "(sin texto)" })
+        }
+        state.streamingAsrResult?.let { result ->
+            Text(
+                "${result.modelId} / ${result.capturePipelineId} / " +
+                    "${result.benchmarkConfigId}: RTF " +
+                    String.format(Locale.ROOT, "%.3f", result.realTimeFactor) +
+                    ", primer texto de audio ${result.firstTextAudioMs ?: -1} ms, " +
+                    "PSS pico ${result.peakPssKb / 1024} MiB",
+                modifier = Modifier.padding(top = 12.dp),
+            )
             Text(result.transcript.ifBlank { "(sin texto)" })
         }
         state.asrError?.let { message ->

@@ -230,6 +230,22 @@ siguiente experimento será un backend realmente streaming, con Sherpa-ONNX como
 ruta de mitigación, manteniendo Whisper base para refinamiento final. Evidencia:
 [`doc/evidence/sprint-3/incremental-optimization-2026-07-28.md`](doc/evidence/sprint-3/incremental-optimization-2026-07-28.md).
 
+**Experimento Sherpa-ONNX del 2026-07-29.** Se integró un transductor Zipformer
+streaming en español detrás de la misma interfaz del foreground service. Sobre el
+PCM congelado de la lectura anterior obtuvo WER 20,22 %, primer texto tras 1,5 s
+de audio, RTF 0,0257 y estado térmico 0. Una segunda lectura en vivo mantuvo
+captura perfecta, cero descartes, latencia de cola p95 de 1 ms y RTF 0,0900; su
+WER fue 24,72 %, por encima del máximo aceptable de 22 % pero por debajo del umbral
+de bloqueo de 25 %. La medición inicial de 11,86 s desde pulsar «Iniciar» incluía
+10,4 s previos a la primera frase; la latencia algorítmica derivada fue 1,46 s.
+El adaptador ahora agrupa las lecturas de captura en tramas de 100 ms para evitar
+persistir y recomponer una métrica cada ~20 ms. Sherpa queda seleccionado
+provisionalmente para el texto en vivo y Whisper base para refinamiento final.
+G2 sigue pendiente hasta una prueba continua de 45 minutos, la validación en S25+
+y la resolución de la licencia exacta del modelo. Evidencia:
+[`doc/evidence/sprint-3/incremental-optimization-2026-07-28.md`](doc/evidence/sprint-3/incremental-optimization-2026-07-28.md)
+y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-streaming-experiment.md).
+
 **Backlog prioritario**
 
 - P0. Implementar ring buffer PCM y ventanas de trabajo.

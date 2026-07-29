@@ -120,19 +120,34 @@ def validate_asr_results(session_dir: Path, required_models: list[str]) -> list[
             require(0 <= segment["startMs"] <= segment["endMs"], f"Invalid ASR timestamps for {model_id}")
             require(segment["startMs"] >= previous_start, f"ASR timestamps are out of order for {model_id}")
             previous_start = segment["startMs"]
+        if data.get("backend", "").startswith("sherpa-onnx-"):
+            require(data.get("frameMs", 0) > 0, "Invalid streaming ASR frame size")
+            require(data.get("decodePassCount", 0) > 0, "Streaming ASR did not decode any frames")
+            require(data.get("partialUpdateCount", 0) >= 0, "Invalid streaming ASR partial count")
+            require(data.get("endpointCount", 0) >= 0, "Invalid streaming ASR endpoint count")
+            require(
+                all(isinstance(text, str) for text in data.get("finalizedTexts", [])),
+                "Invalid streaming ASR finalized text list",
+            )
         require(data["audioDurationMs"] >= 0 and data["inferenceDurationMs"] >= 0, "Invalid ASR duration")
         require(math.isfinite(data["realTimeFactor"]) and data["realTimeFactor"] >= 0, "Invalid ASR RTF")
         results.append({
+            "backend": data.get("backend", "whisper.cpp"),
             "modelId": model_id,
             "benchmarkConfigId": data.get("benchmarkConfigId"),
             "threadCount": data.get("threadCount"),
             "maxChunkMs": data.get("maxChunkMs"),
-            "chunkCount": data["chunkCount"],
+            "chunkCount": data.get("chunkCount"),
+            "frameMs": data.get("frameMs"),
+            "partialUpdateCount": data.get("partialUpdateCount"),
+            "endpointCount": data.get("endpointCount"),
+            "decodePassCount": data.get("decodePassCount"),
             "segmentCount": len(data.get("segments", [])),
             "audioDurationMs": data["audioDurationMs"],
             "inferenceDurationMs": data["inferenceDurationMs"],
             "realTimeFactor": data["realTimeFactor"],
             "timeToFirstTextMs": data.get("timeToFirstTextMs"),
+            "firstTextAudioMs": data.get("firstTextAudioMs"),
             "peakPssKb": data.get("peakPssKb"),
             "maximumThermalStatus": data.get("maximumThermalStatus"),
             "maximumBatteryTemperatureC": data.get("maximumBatteryTemperatureC"),

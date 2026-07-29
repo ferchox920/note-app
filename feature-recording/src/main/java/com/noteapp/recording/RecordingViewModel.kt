@@ -16,6 +16,11 @@ import com.noteapp.asr.AsrLabResult
 import com.noteapp.asr.AsrLabConfig
 import com.noteapp.asr.IncrementalTranscriptSegment
 import com.noteapp.asr.ModelVerificationResult
+import com.noteapp.asr.SherpaStreamingLabConfig
+import com.noteapp.asr.SherpaStreamingLabResult
+import com.noteapp.asr.SherpaStreamingLabRunner
+import com.noteapp.asr.SherpaStreamingModelCatalog
+import com.noteapp.asr.SherpaStreamingModelVerifier
 import com.noteapp.asr.WhisperModelCatalog
 import com.noteapp.asr.WhisperModelDescriptor
 import com.noteapp.asr.WhisperModelInstaller
@@ -46,6 +51,7 @@ data class RecordingUiState(
     val installedModelIds: Set<String> = emptySet(),
     val asrRunning: Boolean = false,
     val asrResult: AsrLabResult? = null,
+    val streamingAsrResult: SherpaStreamingLabResult? = null,
     val asrError: String? = null,
     val recoverableSessions: List<RecordingSession> = emptyList(),
     val completedSessions: List<RecordingSession> = emptyList(),
@@ -81,6 +87,7 @@ class RecordingViewModel @Inject constructor(
     private val controller: AudioRecordingController,
     private val checkpointStore: SessionCheckpointStore,
     private val asrLabRunner: AsrLabRunner,
+    private val sherpaStreamingLabRunner: SherpaStreamingLabRunner,
     private val vadComparisonRunner: VadComparisonRunner,
 ) : ViewModel() {
     private val asrState = MutableStateFlow(AsrUiState())
@@ -99,6 +106,7 @@ class RecordingViewModel @Inject constructor(
                 installedModelIds = asr.installedModelIds,
                 asrRunning = asr.running,
                 asrResult = asr.result,
+                streamingAsrResult = asr.streamingResult,
                 asrError = asr.error,
                 recoverableSessions = asr.recoverableSessions,
                 completedSessions = asr.completedSessions,
@@ -177,7 +185,12 @@ class RecordingViewModel @Inject constructor(
     ) {
         val sessionId = uiState.value.labSessionId ?: return
         viewModelScope.launch {
-            asrState.value = asrState.value.copy(running = true, result = null, error = null)
+            asrState.value = asrState.value.copy(
+                running = true,
+                result = null,
+                streamingResult = null,
+                error = null,
+            )
             runCatching {
                 asrLabRunner.transcribeSession(
                     sessionDirectory = File(applicationContext.filesDir, "recordings/$sessionId"),
@@ -191,6 +204,39 @@ class RecordingViewModel @Inject constructor(
                 asrState.value = asrState.value.copy(
                     running = false,
                     error = failure.message ?: "ASR_FAILED",
+                )
+            }
+        }
+    }
+
+    fun transcribeStreaming(
+        config: SherpaStreamingLabConfig = SherpaStreamingLabConfig(),
+    ) {
+        val sessionId = uiState.value.labSessionId ?: return
+        val descriptor = SherpaStreamingModelCatalog.spanishKroko
+        viewModelScope.launch {
+            asrState.value = asrState.value.copy(
+                running = true,
+                result = null,
+                streamingResult = null,
+                error = null,
+            )
+            runCatching {
+                sherpaStreamingLabRunner.transcribeSession(
+                    sessionDirectory = File(applicationContext.filesDir, "recordings/$sessionId"),
+                    modelDirectory = File(modelsDirectory, descriptor.directoryName),
+                    descriptor = descriptor,
+                    config = config,
+                )
+            }.onSuccess { result ->
+                asrState.value = asrState.value.copy(
+                    running = false,
+                    streamingResult = result,
+                )
+            }.onFailure { failure ->
+                asrState.value = asrState.value.copy(
+                    running = false,
+                    error = failure.message ?: "STREAMING_ASR_FAILED",
                 )
             }
         }
@@ -247,6 +293,12 @@ class RecordingViewModel @Inject constructor(
                 ) == ModelVerificationResult.Valid
             }
             .mapTo(mutableSetOf()) { it.id }
+        SherpaStreamingModelCatalog.evaluationModels.forEach { descriptor ->
+            val modelDirectory = File(modelsDirectory, descriptor.directoryName)
+            if (SherpaStreamingModelVerifier.verify(modelDirectory, descriptor) == null) {
+                installed += descriptor.id
+            }
+        }
         asrState.value = asrState.value.copy(installedModelIds = installed)
     }
 
@@ -268,6 +320,7 @@ class RecordingViewModel @Inject constructor(
         val installedModelIds: Set<String> = emptySet(),
         val running: Boolean = false,
         val result: AsrLabResult? = null,
+        val streamingResult: SherpaStreamingLabResult? = null,
         val error: String? = null,
         val recoverableSessions: List<RecordingSession> = emptyList(),
         val completedSessions: List<RecordingSession> = emptyList(),

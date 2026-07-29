@@ -206,3 +206,96 @@ de hasta 30 s. El siguiente experimento de transcripción incremental debe evalu
 un backend realmente streaming —la ruta de mitigación prevista es Sherpa-ONNX—
 y compararlo contra esta misma lectura antes de iniciar la prueba sostenida de
 45 minutos.
+
+## Cuarta iteración: transductor streaming en español
+
+El 2026-07-29 se integró Sherpa-ONNX 1.13.4 con el modelo experimental
+`sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06`, fijado a la revisión
+`20cf7a4921613397841d31168796cade5b866585`. El instalador verifica tamaño y
+SHA-256 de encoder, decoder, joiner y vocabulario antes y después de copiarlos al
+directorio privado de la APK. El AAR también queda cubierto por verificación de
+dependencias de Gradle.
+
+La licencia del motor Sherpa-ONNX es Apache-2.0, pero la licencia exacta del
+modelo no se considera resuelta: su tarjeta remite de forma genérica a modelos
+comunitarios CC-BY-SA mientras los metadatos del repositorio indican `test` y no
+especifican versión. Por eso el catálogo lo marca
+`UNRESOLVED_EXPERIMENT_ONLY`; no puede distribuirse en producción hasta completar
+la revisión.
+
+### Replay físico sobre el corpus congelado
+
+La sesión `282e9873-1c38-4ca7-b9a1-846ee89f37e2` se reprodujo continuamente,
+sin reiniciar el estado entre tramas:
+
+- WER: 20,22 % sobre 178 palabras de referencia;
+- primer texto: 1.500 ms de audio;
+- RTF: 0,0257;
+- 83 actualizaciones parciales, 7 endpoints y 8 segmentos finalizados;
+- PSS pico: 397.457 KiB;
+- estado térmico máximo: 0;
+- temperatura máxima de batería: 25,1 °C.
+
+Esta es la primera configuración incremental medida que combina WER menor o igual
+a 22 %, primer texto menor o igual a 4 s y RTF menor que 1 sobre el corpus
+congelado.
+
+### Lectura física en vivo
+
+La sesión autorizada `4fc280eb-30a6-476a-adb4-577be8dec1d5`, capturada con la
+integración real del foreground service, completó 137.940 ms:
+
+- cero errores de lectura, discontinuidades o frames estimados perdidos;
+- cero parciales descartados, conflictos estables o errores del ASR;
+- 87 cambios parciales y 10 segmentos finalizados;
+- latencia de cola p50 0 ms y p95 1 ms;
+- RTF sostenido 0,0900;
+- WER 24,72 %.
+
+El contador original dio 11.860 ms desde que se pulsó «Iniciar». La primera
+hipótesis pertenecía al segmento nativo iniciado en 10.400 ms, por lo que el
+tiempo algorítmico derivado desde el comienzo de esa frase fue 1.460 ms. La
+implementación posterior registra esta latencia relativa al segmento para no
+confundir preparación humana con retraso del decodificador.
+
+La calidad en vivo queda por encima del máximo aceptable de 22 %, aunque debajo del
+umbral de bloqueo de 25 %. El modelo se acepta provisionalmente para parciales
+visibles, no como transcripción final única. Whisper base q5_1 conserva el rol de
+refinamiento final por su WER de 21,91 % sobre el corpus congelado.
+
+### Optimización posterior a la lectura
+
+AudioRecord entregó unas 6.898 lecturas de aproximadamente 20 ms y el primer
+adaptador creó una métrica por cada una. El JSON incremental alcanzó 2.033.467
+bytes en solo 2 min 17 s. El adaptador ahora:
+
+- acumula PCM continuo en tramas de 100 ms antes de llamar al transductor;
+- drena una última trama parcial al completar la sesión;
+- conserva el timeline PCM autoritativo;
+- mantiene una cola acotada de 64 tramas y error explícito de overflow;
+- registra el primer texto relativo al inicio del segmento nativo;
+- tiene pruebas deterministas para coalescencia, endpoints, drenaje y cierre.
+
+Esto reduce aproximadamente cinco veces el número de decodificaciones, emisiones
+de estado y filas de telemetría sin recortar audio ni reiniciar el contexto.
+
+El smoke test físico posterior, sesión
+`d24dee16-cff9-42ed-8b0c-ff0dd6ddbd63`, confirmó la reducción: 24.260 ms
+produjeron 243 métricas (10,0/s), frente a 50,0/s en la lectura anterior. También
+obtuvo primer texto en 2.800 ms, RTF 0,0479, cero descartes, cero discontinuidades
+y cero errores técnicos.
+
+Un intento de repetir Whisper base inmediatamente después de la lectura fue
+cancelado de forma segura: superó tres minutos con ocupación sostenida de varios
+núcleos y la piel llegó a 37,9 °C, cerca del primer umbral térmico de 38 °C. No
+produjo resultado y no se usa como benchmark. El refinamiento debe repetirse en
+frío antes de ratificar su coste junto al backend nuevo.
+
+## Decisión actualizada
+
+- Sherpa-ONNX Zipformer queda como backend incremental experimental seleccionado.
+- Whisper base q5_1 queda como refinamiento final provisional.
+- G2 no se aprueba todavía: faltan 45 minutos continuos, revisión manual de
+  estabilidad, medición de memoria/batería/termal en vivo y repetición en S25+.
+- La distribución del modelo Sherpa queda bloqueada hasta resolver su licencia
+  exacta.

@@ -29,6 +29,14 @@ android {
         compose = true
     }
 
+    packaging {
+        jniLibs {
+            // sherpa-onnx and onnxruntime-android both package the 1.27 core
+            // runtime. Their JNI clients share that ABI in the final process.
+            pickFirsts += "lib/*/libonnxruntime.so"
+        }
+    }
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false

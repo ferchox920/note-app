@@ -35,6 +35,10 @@ android {
 
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.sherpa.onnx) {
+        artifact {
+            type = "aar"
+        }
+    }
     testImplementation(libs.junit)
 }
-

@@ -2,6 +2,7 @@ package com.noteapp.recording
 
 import android.content.Context
 import com.noteapp.asr.AsrLabRunner
+import com.noteapp.asr.SherpaStreamingLabRunner
 import com.noteapp.audio.AudioRecordingController
 import com.noteapp.storage.FileSessionCheckpointStore
 import com.noteapp.storage.SessionCheckpointStore
@@ -32,6 +33,12 @@ object RecordingDependenciesModule {
     @Provides
     @Singleton
     fun provideAsrLabRunner(@ApplicationContext context: Context): AsrLabRunner = AsrLabRunner(context)
+
+    @Provides
+    @Singleton
+    fun provideSherpaStreamingLabRunner(
+        @ApplicationContext context: Context,
+    ): SherpaStreamingLabRunner = SherpaStreamingLabRunner(context)
 
     @Provides
     fun provideVadComparisonRunner(

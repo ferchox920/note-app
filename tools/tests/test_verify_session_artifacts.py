@@ -115,6 +115,41 @@ class VerifySessionArtifactsTest(unittest.TestCase):
         self.assertFalse(report["contentIncluded"])
         self.assertNotIn("sensitive", json.dumps(report))
 
+    def test_accepts_streaming_asr_result_without_offline_chunks(self):
+        self.write_json("asr-result-streaming.json", {
+            "schemaVersion": 1,
+            "backend": "sherpa-onnx-1.13.4",
+            "modelId": "streaming-es",
+            "benchmarkConfigId": "streaming-t4-f100ms",
+            "threadCount": 4,
+            "frameMs": 100,
+            "audioDurationMs": 20,
+            "inferenceDurationMs": 2,
+            "realTimeFactor": 0.1,
+            "timeToFirstTextMs": 1,
+            "firstTextAudioMs": 10,
+            "partialUpdateCount": 1,
+            "endpointCount": 1,
+            "decodePassCount": 2,
+            "peakPssKb": 321,
+            "transcript": "sensitive streaming",
+            "finalizedTexts": ["sensitive streaming"],
+        })
+
+        report = verify_session(
+            self.session,
+            required_models=["streaming-es"],
+        )
+
+        streaming = next(
+            item for item in report["asr"] if item["modelId"] == "streaming-es"
+        )
+        self.assertEqual("sherpa-onnx-1.13.4", streaming["backend"])
+        self.assertIsNone(streaming["chunkCount"])
+        self.assertEqual(100, streaming["frameMs"])
+        self.assertEqual(2, streaming["decodePassCount"])
+        self.assertNotIn("sensitive", json.dumps(report))
+
     def test_rejects_pcm_checksum_mismatch(self):
         (self.session / "segment-0000.pcm").write_bytes(bytes(640))
 

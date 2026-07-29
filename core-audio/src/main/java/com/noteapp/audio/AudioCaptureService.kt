@@ -20,11 +20,14 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.noteapp.asr.IncrementalAsrCoordinator
+import com.noteapp.asr.IncrementalAsrSession
 import com.noteapp.asr.IncrementalAsrState
 import com.noteapp.asr.IncrementalInferenceResult
 import com.noteapp.asr.IncrementalTranscriptSanitizer
 import com.noteapp.asr.IncrementalPcmTranscriber
 import com.noteapp.asr.IncrementalTranscriptStore
+import com.noteapp.asr.SherpaStreamingIncrementalSession
+import com.noteapp.asr.SherpaStreamingModelCatalog
 import com.noteapp.asr.WhisperEngine
 import com.noteapp.asr.WhisperModelCatalog
 import com.noteapp.domain.SessionStatus
@@ -71,7 +74,7 @@ class AudioCaptureService : Service() {
     private var nextCheckpointAtBytes = CHECKPOINT_INTERVAL_BYTES
     private var captureMetrics = AudioCaptureMetrics()
     private var capturePipeline = CapturePipeline.DIRECT_16_KHZ
-    private var incrementalCoordinator: IncrementalAsrCoordinator? = null
+    private var incrementalSession: IncrementalAsrSession? = null
     private var incrementalEngine: WhisperEngine? = null
     private var incrementalCollectorJob: Job? = null
     @Volatile private var incrementalState = IncrementalAsrState(enabled = false)
@@ -236,58 +239,82 @@ class AudioCaptureService : Service() {
             incrementalState = IncrementalAsrState(enabled = false)
             return
         }
-        val descriptor = WhisperModelCatalog.evaluationModels.firstOrNull { it.id == modelId }
-        if (descriptor == null) {
-            incrementalState = IncrementalAsrState(
-                enabled = false,
-                errorCode = ERROR_INCREMENTAL_MODEL_UNKNOWN,
-            )
-            return
+        val restoredIncrementalState = writer?.sessionDirectory?.let { sessionDirectory ->
+            runCatching { incrementalTranscriptStore.read(sessionDirectory) }.getOrNull()
         }
-        val engine = runCatching {
-            WhisperEngine.create(
-                modelFile = File(filesDir, "models/${descriptor.fileName}"),
-                descriptor = descriptor,
-            )
-        }.getOrElse {
+        val session = if (modelId == SherpaStreamingModelCatalog.spanishKroko.id) {
+            runCatching {
+                val descriptor = SherpaStreamingModelCatalog.spanishKroko
+                SherpaStreamingIncrementalSession.create(
+                    scope = serviceScope,
+                    modelDirectory = File(filesDir, "models/${descriptor.directoryName}"),
+                    descriptor = descriptor,
+                    requestedThreads = 4,
+                    initialState = restoredIncrementalState ?: IncrementalAsrState(),
+                    initialStreamEndMs = writer?.totalBytes
+                        ?.times(1_000L)
+                        ?.div(format.bytesPerSecond)
+                        ?: 0L,
+                )
+            }.getOrNull()
+        } else {
+            val descriptor = WhisperModelCatalog.evaluationModels.firstOrNull { it.id == modelId }
+            if (descriptor == null) {
+                incrementalState = IncrementalAsrState(
+                    enabled = false,
+                    errorCode = ERROR_INCREMENTAL_MODEL_UNKNOWN,
+                )
+                return
+            }
+            val engine = runCatching {
+                WhisperEngine.create(
+                    modelFile = File(filesDir, "models/${descriptor.fileName}"),
+                    descriptor = descriptor,
+                )
+            }.getOrNull()
+            if (engine == null) {
+                null
+            } else {
+                incrementalEngine = engine
+                IncrementalAsrCoordinator(
+                    scope = serviceScope,
+                    transcriber = IncrementalPcmTranscriber { pcm16, offsetMs ->
+                        val result = engine.transcribePcm16(
+                            pcm = pcm16,
+                            offsetMs = offsetMs,
+                            language = "es",
+                            lowLatency = true,
+                        )
+                        val sanitized = IncrementalTranscriptSanitizer.inspect(
+                            result.segments.joinToString(" ") { it.text.trim() }.trim(),
+                        )
+                        IncrementalInferenceResult(
+                            text = sanitized.text,
+                            inferenceDurationMs = result.inferenceDurationMs,
+                            realTimeFactor = result.realTimeFactor,
+                            suppressedRepetition = sanitized.suppressedRepetition,
+                            nativeTimings = result.nativeTimings,
+                        )
+                    },
+                    initialState = restoredIncrementalState ?: IncrementalAsrState(),
+                )
+            }
+        }
+        if (session == null) {
             incrementalState = IncrementalAsrState(
                 enabled = false,
                 errorCode = ERROR_INCREMENTAL_MODEL_UNAVAILABLE,
             )
             return
         }
-        incrementalEngine = engine
-        val restoredIncrementalState = writer?.sessionDirectory?.let { sessionDirectory ->
-            runCatching { incrementalTranscriptStore.read(sessionDirectory) }.getOrNull()
+        incrementalSession = session
+        if (session.requiresVad && vadSegmenter == null) {
+            session.reportError(ERROR_INCREMENTAL_VAD_REQUIRED)
         }
-        val coordinator = IncrementalAsrCoordinator(
-            scope = serviceScope,
-            transcriber = IncrementalPcmTranscriber { pcm16, offsetMs ->
-                val result = engine.transcribePcm16(
-                    pcm = pcm16,
-                    offsetMs = offsetMs,
-                    language = "es",
-                    lowLatency = true,
-                )
-                val sanitized = IncrementalTranscriptSanitizer.inspect(
-                    result.segments.joinToString(" ") { it.text.trim() }.trim(),
-                )
-                IncrementalInferenceResult(
-                    text = sanitized.text,
-                    inferenceDurationMs = result.inferenceDurationMs,
-                    realTimeFactor = result.realTimeFactor,
-                    suppressedRepetition = sanitized.suppressedRepetition,
-                    nativeTimings = result.nativeTimings,
-                )
-            },
-            initialState = restoredIncrementalState ?: IncrementalAsrState(),
-        )
-        incrementalCoordinator = coordinator
-        if (vadSegmenter == null) coordinator.reportError(ERROR_INCREMENTAL_VAD_REQUIRED)
-        incrementalState = coordinator.state.value
+        incrementalState = session.state.value
         incrementalCollectorJob = serviceScope.launch {
             var lastPersistedSegmentCount = -1
-            coordinator.state.collect { state ->
+            session.state.collect { state ->
                 incrementalState = state
                 if (state.finalizedSegments.size != lastPersistedSegmentCount) {
                     persistIncrementalTranscript()
@@ -300,12 +327,12 @@ class AudioCaptureService : Service() {
     }
 
     private suspend fun releaseIncrementalAsr(drain: Boolean) {
-        incrementalCoordinator?.shutdown(drain)
-        incrementalState = incrementalCoordinator?.state?.value ?: incrementalState
+        incrementalSession?.shutdown(drain)
+        incrementalState = incrementalSession?.state?.value ?: incrementalState
         incrementalCollectorJob?.cancelAndJoin()
         incrementalCollectorJob = null
         persistIncrementalTranscript()
-        incrementalCoordinator = null
+        incrementalSession = null
         incrementalEngine?.release()
         incrementalEngine = null
     }
@@ -618,13 +645,16 @@ class AudioCaptureService : Service() {
         length: Int,
     ) {
         sink.write(buffer, 0, length)
-        val vadResult = processVad(buffer, length) ?: return
-        incrementalCoordinator?.onPcm16(
+        val vadResult = processVad(buffer, length)
+        val session = incrementalSession ?: return
+        if (session.requiresVad && vadResult == null) return
+        val streamEndMs = writer?.totalBytes?.times(1_000L)?.div(format.bytesPerSecond) ?: return
+        session.onPcm16(
             pcm16 = buffer,
             length = length,
-            speechActive = vadResult.speechActive,
-            endpointDetected = vadResult.closedSegments.isNotEmpty(),
-            streamEndMs = vadResult.processedDurationMs,
+            speechActive = vadResult?.speechActive ?: false,
+            endpointDetected = vadResult?.closedSegments?.isNotEmpty() == true,
+            streamEndMs = streamEndMs,
         )
     }
 
@@ -689,7 +719,7 @@ class AudioCaptureService : Service() {
             val result = segmenter.endCurrentStream()
             speechDetected = false
             if (result.closedSegments.isNotEmpty()) vadSegments += result.closedSegments
-            incrementalCoordinator?.endSegment(result.processedDurationMs)
+            incrementalSession?.endSegment(result.processedDurationMs)
             persistVadTimeline()
         } catch (_: Exception) {
             disableVad(ERROR_VAD_PROCESSING_FAILED)
@@ -713,7 +743,7 @@ class AudioCaptureService : Service() {
     private fun disableVad(errorCode: String) {
         vadErrorCode = errorCode
         speechDetected = false
-        incrementalCoordinator?.reportError(ERROR_INCREMENTAL_VAD_REQUIRED)
+        incrementalSession?.takeIf { it.requiresVad }?.reportError(ERROR_INCREMENTAL_VAD_REQUIRED)
         runCatching { vadSegmenter?.close() }
         vadSegmenter = null
     }

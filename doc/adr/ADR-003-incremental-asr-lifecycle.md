@@ -18,8 +18,10 @@ intervalo de emisión.
   corre secuencialmente fuera del bucle de captura.
 - La cola admite dos trabajos. Se descartan parciales antiguos primero; un cierre
   final nunca desplaza silenciosamente a otro cierre final y un overflow se registra.
-- WebRTC VAD controla onset/endpoint. Sin VAD, el PCM continúa grabándose y el ASR
-  incremental informa un error recuperable.
+- La sesión incremental declara si requiere VAD. Whisper usa WebRTC VAD para
+  onset/endpoint y, si falta, informa un error recuperable; el transductor Sherpa
+  consume PCM continuo y usa endpointing nativo mientras WebRTC conserva la
+  evidencia de voz.
 - El modelo se elige explícitamente antes de iniciar y debe estar instalado y
   verificado. El error de carga no cancela la grabación.
 - Pausa y finalización fuerzan refinamiento del segmento. Al completar se drena la
@@ -37,3 +39,6 @@ frontera deberá extraerse detrás de una interfaz de pipeline.
 
 La decisión no aprueba G2: RTF, latencia, temperatura y estabilidad de 45 minutos
 deben medirse en S25 Ultra/S25+.
+
+La selección provisional del transductor y sus restricciones se registran en
+[`ADR-004-sherpa-streaming-experiment.md`](ADR-004-sherpa-streaming-experiment.md).

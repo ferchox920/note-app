@@ -31,6 +31,23 @@ fun interface IncrementalPcmTranscriber {
     suspend fun transcribe(pcm16: ByteArray, offsetMs: Long): IncrementalInferenceResult
 }
 
+interface IncrementalAsrSession {
+    val state: StateFlow<IncrementalAsrState>
+    val requiresVad: Boolean
+
+    fun onPcm16(
+        pcm16: ByteArray,
+        length: Int = pcm16.size,
+        speechActive: Boolean,
+        endpointDetected: Boolean,
+        streamEndMs: Long,
+    )
+
+    fun endSegment(streamEndMs: Long)
+    fun reportError(errorCode: String)
+    suspend fun shutdown(drain: Boolean)
+}
+
 data class IncrementalTranscriptSegment(
     val startMs: Long,
     val endMs: Long,
@@ -171,7 +188,7 @@ class IncrementalAsrCoordinator(
     private val endpointFinalizationGraceMs: Long = ENDPOINT_FINALIZATION_GRACE_MS,
     private val nanoTime: () -> Long = System::nanoTime,
     initialState: IncrementalAsrState = IncrementalAsrState(),
-) {
+) : IncrementalAsrSession {
     private val mutableState = MutableStateFlow(
         initialState.copy(
             enabled = true,
@@ -180,7 +197,8 @@ class IncrementalAsrCoordinator(
             queueDepth = 0,
         ),
     )
-    val state: StateFlow<IncrementalAsrState> = mutableState.asStateFlow()
+    override val state: StateFlow<IncrementalAsrState> = mutableState.asStateFlow()
+    override val requiresVad: Boolean = true
 
     private val assembler = IncrementalPcmWindowAssembler(sampleRateHz = sampleRateHz)
     private val reconciler = StablePrefixReconciler()
@@ -200,9 +218,9 @@ class IncrementalAsrCoordinator(
     }
 
     /** Called on the capture thread after VAD processed the same normalized PCM. */
-    fun onPcm16(
+    override fun onPcm16(
         pcm16: ByteArray,
-        length: Int = pcm16.size,
+        length: Int,
         speechActive: Boolean,
         endpointDetected: Boolean,
         streamEndMs: Long,
@@ -242,15 +260,15 @@ class IncrementalAsrCoordinator(
     }
 
     /** Forces a final refinement at pause/finish even if hangover was incomplete. */
-    fun endSegment(streamEndMs: Long) {
+    override fun endSegment(streamEndMs: Long) {
         if (accepting && segmentActive) enqueueFinal(streamEndMs)
     }
 
-    fun reportError(errorCode: String) {
+    override fun reportError(errorCode: String) {
         mutableState.update { it.copy(errorCode = errorCode) }
     }
 
-    suspend fun shutdown(drain: Boolean) {
+    override suspend fun shutdown(drain: Boolean) {
         accepting = false
         if (drain) {
             while (mutableState.value.running || queue.size() > 0) delay(10)
