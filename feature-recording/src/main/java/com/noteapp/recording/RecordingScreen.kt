@@ -44,8 +44,6 @@ import com.noteapp.domain.RecordingIntent
 import com.noteapp.domain.SessionStatus
 import com.noteapp.asr.WhisperModelCatalog
 import com.noteapp.asr.WhisperModelDescriptor
-import com.noteapp.asr.AsrLabConfig
-import com.noteapp.asr.SherpaStreamingLabConfig
 import com.noteapp.asr.SherpaStreamingModelCatalog
 import com.noteapp.audio.CapturePipeline
 import java.util.Locale
@@ -57,10 +55,7 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
     var permissionDenied by remember { mutableStateOf(false) }
     var pendingModel by remember { mutableStateOf<WhisperModelDescriptor?>(null) }
     var pendingCapturePipeline by remember { mutableStateOf(CapturePipeline.DIRECT_16_KHZ) }
-    var selectedIncrementalModelId by remember { mutableStateOf<String?>(null) }
     var pendingIncrementalModelId by remember { mutableStateOf<String?>(null) }
-    var benchmarkThreadCount by remember { mutableStateOf(4) }
-    var benchmarkChunkSeconds by remember { mutableStateOf(30) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
@@ -102,28 +97,20 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
             modelPicker.launch(arrayOf("application/octet-stream", "*/*"))
         },
         onTranscribe = { descriptor ->
-            viewModel.transcribe(
-                descriptor,
-                AsrLabConfig(
-                    threadCount = benchmarkThreadCount,
-                    maxChunkMs = benchmarkChunkSeconds * 1_000L,
-                ),
-            )
+            viewModel.transcribe(descriptor)
         },
         onTranscribeStreaming = {
-            viewModel.transcribeStreaming(
-                SherpaStreamingLabConfig(threadCount = benchmarkThreadCount),
-            )
+            viewModel.transcribeStreaming()
         },
         onSelectLabSession = viewModel::selectLabSession,
         onRecoverSession = viewModel::recoverSession,
         onCompareVad = viewModel::compareVad,
-        selectedIncrementalModelId = selectedIncrementalModelId,
-        onSelectIncrementalModel = { selectedIncrementalModelId = it },
-        benchmarkThreadCount = benchmarkThreadCount,
-        onSelectBenchmarkThreadCount = { benchmarkThreadCount = it },
-        benchmarkChunkSeconds = benchmarkChunkSeconds,
-        onSelectBenchmarkChunkSeconds = { benchmarkChunkSeconds = it },
+        selectedIncrementalModelId = state.selectedIncrementalModelId,
+        onSelectIncrementalModel = viewModel::selectIncrementalModel,
+        benchmarkThreadCount = state.benchmarkThreadCount,
+        onSelectBenchmarkThreadCount = viewModel::selectBenchmarkThreadCount,
+        benchmarkChunkSeconds = state.benchmarkChunkSeconds,
+        onSelectBenchmarkChunkSeconds = viewModel::selectBenchmarkChunkSeconds,
     )
 }
 
@@ -210,24 +197,37 @@ fun RecordingScreen(
                     ?: "Desactivado para la próxima sesión",
                 style = MaterialTheme.typography.bodySmall,
             )
+            Text(
+                "Pipeline recordado: ${state.preferredCapturePipelineId}",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(top = 8.dp),
             ) {
-                Button(onClick = { onSelectIncrementalModel(null) }) {
+                Button(
+                    enabled = state.preferencesReady,
+                    onClick = { onSelectIncrementalModel(null) },
+                ) {
                     Text("Sin ASR en vivo")
                 }
                 WhisperModelCatalog.evaluationModels
                     .filter { it.id in state.installedModelIds }
                     .forEach { descriptor ->
-                        Button(onClick = { onSelectIncrementalModel(descriptor.id) }) {
+                        Button(
+                            enabled = state.preferencesReady,
+                            onClick = { onSelectIncrementalModel(descriptor.id) },
+                        ) {
                             Text(descriptor.fileName.substringAfter("ggml-").substringBefore("-"))
                         }
                     }
                 SherpaStreamingModelCatalog.evaluationModels
                     .filter { it.id in state.installedModelIds }
                     .forEach { descriptor ->
-                        Button(onClick = { onSelectIncrementalModel(descriptor.id) }) {
+                        Button(
+                            enabled = state.preferencesReady,
+                            onClick = { onSelectIncrementalModel(descriptor.id) },
+                        ) {
                             Text("Streaming ES (experimental)")
                         }
                     }
@@ -239,17 +239,23 @@ fun RecordingScreen(
         ) {
             when (state.status) {
                 SessionStatus.NEW -> {
-                    Button(onClick = {
+                    Button(
+                        enabled = state.preferencesReady,
+                        onClick = {
                         onStart(CapturePipeline.DIRECT_16_KHZ, selectedIncrementalModelId)
-                    }) {
+                        },
+                    ) {
                         Text("Iniciar 16 kHz")
                     }
-                    Button(onClick = {
+                    Button(
+                        enabled = state.preferencesReady,
+                        onClick = {
                         onStart(
                             CapturePipeline.NATIVE_48_KHZ_TO_16_KHZ,
                             selectedIncrementalModelId,
                         )
-                    }) {
+                        },
+                    ) {
                         Text("Iniciar 48→16 kHz")
                     }
                 }
@@ -385,7 +391,7 @@ fun RecordingScreen(
         ) {
             listOf(2, 4, 6, 8).forEach { threads ->
                 Button(
-                    enabled = !state.asrRunning,
+                    enabled = state.preferencesReady && !state.asrRunning,
                     onClick = { onSelectBenchmarkThreadCount(threads) },
                 ) {
                     Text(if (threads == benchmarkThreadCount) "[$threads] h" else "$threads h")
@@ -398,7 +404,7 @@ fun RecordingScreen(
         ) {
             listOf(10, 20, 30).forEach { seconds ->
                 Button(
-                    enabled = !state.asrRunning,
+                    enabled = state.preferencesReady && !state.asrRunning,
                     onClick = { onSelectBenchmarkChunkSeconds(seconds) },
                 ) {
                     Text(if (seconds == benchmarkChunkSeconds) "[$seconds] s" else "$seconds s")
@@ -418,7 +424,10 @@ fun RecordingScreen(
                     Text(if (installed) "Reimportar ${descriptor.quantization}" else "Importar ${descriptor.fileName.substringAfter("ggml-").substringBefore("-")}")
                 }
                 Button(
-                    enabled = installed && state.labSessionId != null && !state.asrRunning,
+                    enabled = state.preferencesReady &&
+                        installed &&
+                        state.labSessionId != null &&
+                        !state.asrRunning,
                     onClick = { onTranscribe(descriptor) },
                 ) {
                     Text("Transcribir ${descriptor.fileName.substringAfter("ggml-").substringBefore("-")}")
@@ -428,7 +437,10 @@ fun RecordingScreen(
         val streamingDescriptor = SherpaStreamingModelCatalog.spanishKroko
         val streamingInstalled = streamingDescriptor.id in state.installedModelIds
         Button(
-            enabled = streamingInstalled && state.labSessionId != null && !state.asrRunning,
+            enabled = state.preferencesReady &&
+                streamingInstalled &&
+                state.labSessionId != null &&
+                !state.asrRunning,
             onClick = onTranscribeStreaming,
             modifier = Modifier.padding(top = 8.dp),
         ) {

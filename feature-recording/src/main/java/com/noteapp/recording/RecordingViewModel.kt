@@ -11,6 +11,8 @@ import com.noteapp.domain.RecordingIntent
 import com.noteapp.domain.SessionStatus
 import com.noteapp.domain.RecordingSession
 import com.noteapp.storage.SessionCheckpointStore
+import com.noteapp.storage.AppPreferences
+import com.noteapp.storage.AppPreferencesStore
 import com.noteapp.storage.ProcessingTelemetryStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
@@ -30,6 +32,7 @@ import com.noteapp.asr.WhisperModelInstaller
 import com.noteapp.asr.WhisperModelVerifier
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -86,6 +89,11 @@ data class RecordingUiState(
     val incrementalLastRealTimeFactor: Double? = null,
     val incrementalAsrErrorCode: String? = null,
     val incrementalFinalizedSegments: List<IncrementalTranscriptSegment> = emptyList(),
+    val preferencesReady: Boolean = false,
+    val preferredCapturePipelineId: String = AppPreferences.DEFAULT_CAPTURE_PIPELINE_ID,
+    val selectedIncrementalModelId: String? = null,
+    val benchmarkThreadCount: Int = AppPreferences.DEFAULT_BENCHMARK_THREAD_COUNT,
+    val benchmarkChunkSeconds: Int = AppPreferences.DEFAULT_BENCHMARK_CHUNK_SECONDS,
 )
 
 @HiltViewModel
@@ -93,6 +101,7 @@ class RecordingViewModel @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
     private val controller: AudioRecordingController,
     private val checkpointStore: SessionCheckpointStore,
+    private val appPreferencesStore: AppPreferencesStore,
     private val processingTelemetryStore: ProcessingTelemetryStore,
     private val asrLabRunner: AsrLabRunner,
     private val sherpaStreamingLabRunner: SherpaStreamingLabRunner,
@@ -101,8 +110,16 @@ class RecordingViewModel @Inject constructor(
     private val asrState = MutableStateFlow(AsrUiState())
     private val modelsDirectory = File(applicationContext.filesDir, "models")
     private val incrementalTranscriptStore = IncrementalTranscriptStore()
+    private val preferencesState: StateFlow<AppPreferences?> = appPreferencesStore.preferences
+        .map<AppPreferences, AppPreferences?> { it }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val uiState: StateFlow<RecordingUiState> = combine(controller.state, asrState) { runtime, asr ->
+    val uiState: StateFlow<RecordingUiState> = combine(
+        controller.state,
+        asrState,
+        preferencesState,
+    ) { runtime, asr, storedPreferences ->
+            val preferences = storedPreferences ?: AppPreferences()
             val storedTranscript = asr.selectedIncrementalTranscript.takeIf {
                 runtime.status == SessionStatus.NEW &&
                     asr.selectedLabSessionId != null
@@ -173,6 +190,11 @@ class RecordingViewModel @Inject constructor(
                     ?: runtime.incrementalAsrErrorCode,
                 incrementalFinalizedSegments = storedState?.finalizedSegments
                     ?: runtime.incrementalFinalizedSegments,
+                preferencesReady = storedPreferences != null,
+                preferredCapturePipelineId = preferences.capturePipelineId,
+                selectedIncrementalModelId = preferences.incrementalModelId,
+                benchmarkThreadCount = preferences.benchmarkThreadCount,
+                benchmarkChunkSeconds = preferences.benchmarkChunkSeconds,
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordingUiState())
@@ -196,7 +218,28 @@ class RecordingViewModel @Inject constructor(
     }
 
     fun startRecording(pipeline: CapturePipeline, incrementalModelId: String? = null) {
+        viewModelScope.launch {
+            appPreferencesStore.setCapturePipeline(pipeline.id)
+        }
         controller.start(pipeline, incrementalModelId)
+    }
+
+    fun selectIncrementalModel(modelId: String?) {
+        viewModelScope.launch {
+            appPreferencesStore.setIncrementalModel(modelId)
+        }
+    }
+
+    fun selectBenchmarkThreadCount(count: Int) {
+        viewModelScope.launch {
+            appPreferencesStore.setBenchmarkThreadCount(count)
+        }
+    }
+
+    fun selectBenchmarkChunkSeconds(seconds: Int) {
+        viewModelScope.launch {
+            appPreferencesStore.setBenchmarkChunkSeconds(seconds)
+        }
     }
 
     fun importModel(uri: Uri, descriptor: WhisperModelDescriptor) {
@@ -219,9 +262,13 @@ class RecordingViewModel @Inject constructor(
 
     fun transcribe(
         descriptor: WhisperModelDescriptor,
-        config: AsrLabConfig = AsrLabConfig.Default,
     ) {
         val sessionId = uiState.value.labSessionId ?: return
+        val preferences = preferencesState.value ?: return
+        val config = AsrLabConfig(
+            threadCount = preferences.benchmarkThreadCount,
+            maxChunkMs = preferences.benchmarkChunkSeconds * 1_000L,
+        )
         viewModelScope.launch {
             asrState.value = asrState.value.copy(
                 running = true,
@@ -260,10 +307,12 @@ class RecordingViewModel @Inject constructor(
         }
     }
 
-    fun transcribeStreaming(
-        config: SherpaStreamingLabConfig = SherpaStreamingLabConfig(),
-    ) {
+    fun transcribeStreaming() {
         val sessionId = uiState.value.labSessionId ?: return
+        val preferences = preferencesState.value ?: return
+        val config = SherpaStreamingLabConfig(
+            threadCount = preferences.benchmarkThreadCount,
+        )
         val descriptor = SherpaStreamingModelCatalog.spanishKroko
         viewModelScope.launch {
             asrState.value = asrState.value.copy(

@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.protobuf)
 }
 
 android {
@@ -24,6 +25,8 @@ dependencies {
     implementation(project(":core-domain"))
     implementation(libs.androidx.room.ktx)
     api(libs.androidx.room.runtime)
+    implementation(libs.androidx.datastore)
+    implementation(libs.protobuf.kotlin.lite)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.json.java)
@@ -33,4 +36,20 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.kotlinx.coroutines.core)
+}
+
+protobuf {
+    protoc {
+        artifact = libs.protobuf.protoc.get().toString()
+    }
+    generateProtoTasks {
+        all().configureEach {
+            builtins {
+                maybeCreate("java").apply {
+                    option("lite")
+                }
+                maybeCreate("kotlin")
+            }
+        }
+    }
 }

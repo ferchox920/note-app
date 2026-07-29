@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option java_package = "com.noteapp.storage.proto";
+option java_multiple_files = true;
+
+message StoredAppPreferences {
+  string capture_pipeline_id = 1;
+  bool incremental_asr_enabled = 2;
+  string incremental_model_id = 3;
+  int32 benchmark_thread_count = 4;
+  int32 benchmark_chunk_seconds = 5;
+}

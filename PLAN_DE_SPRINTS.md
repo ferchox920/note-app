@@ -310,6 +310,12 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
   Sprint 6. Véase
   [`doc/evidence/sprint-4/room-foundation-2026-07-29.md`](doc/evidence/sprint-4/room-foundation-2026-07-29.md).
 - P0. Implementar DataStore para preferencias y flags no relacionales.
+  **Completado (2026-07-29):** Proto DataStore tipado y singleton para pipeline
+  de captura, modelo ASR incremental y configuración de benchmark. Incluye
+  valores conservadores, validación de dominio, recuperación ante corrupción y
+  consumo real desde la UI/`RecordingViewModel`; persistencia tras cierre
+  forzado validada en S25 Ultra. Véase
+  [`doc/evidence/sprint-4/proto-datastore-2026-07-29.md`](doc/evidence/sprint-4/proto-datastore-2026-07-29.md).
 - P0. Implementar SQLCipher y gestión de claves con Android Keystore.
 - P0. Cifrar archivos de audio y artefactos sensibles en reposo.
 - P0. Implementar recuperación idempotente tras cierre forzado o reinicio.

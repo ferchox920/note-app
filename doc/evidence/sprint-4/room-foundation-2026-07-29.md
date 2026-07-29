@@ -81,6 +81,7 @@ ejecutó una nueva grabación ni un nuevo replay ASR; validó la integración co
 pruebas JVM/instrumentadas y el arranque sobre los artefactos existentes.
 
 Esta evidencia no aprueba G3 ni afirma cifrado en reposo. Permanecen pendientes
-DataStore, SQLCipher/Keystore, cifrado de artefactos, borrado verificable
-completo y las pruebas reproducibles de cierre forzado/reinicio exigidas por
-Sprint 4.
+SQLCipher/Keystore, cifrado de artefactos, borrado verificable completo y las
+pruebas reproducibles de cierre forzado/reinicio exigidas por Sprint 4.
+DataStore quedó completado posteriormente y tiene evidencia separada en
+`doc/evidence/sprint-4/proto-datastore-2026-07-29.md`.
