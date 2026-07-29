@@ -29,6 +29,7 @@ data class RecordingRuntimeState(
     val incrementalDroppedPartialCount: Long = 0,
     val incrementalPartialCount: Int = 0,
     val incrementalStableConflictCount: Int = 0,
+    val incrementalSuppressedRepetitionCount: Int = 0,
     val incrementalTimeToFirstTextMs: Long? = null,
     val incrementalLastVisibleLatencyMs: Long? = null,
     val incrementalLastRealTimeFactor: Double? = null,

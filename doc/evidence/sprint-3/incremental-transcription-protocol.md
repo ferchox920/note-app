@@ -47,7 +47,8 @@ explícito, ciclo parcial→final y persistencia del modelo elegido en el checkp
 
 Cada inferencia persiste inicio/fin de ventana, tipo parcial/final, duración de audio,
 tiempo de inferencia, latencia visible, RTF, tiempos nativos de Whisper y si
-reutilizó un resultado idéntico.
+reutilizó un resultado idéntico o suprimió un loop repetitivo. La UI y el reporte
+acumulan las supresiones para no confundirlas con ausencia de voz.
 El RTF sostenido se calcula contra la unión temporal de las ventanas, no contra la
 suma que contaría el overlap varias veces. Después de copiar exclusivamente los
 JSON autorizados a un directorio privado, generar percentiles con:

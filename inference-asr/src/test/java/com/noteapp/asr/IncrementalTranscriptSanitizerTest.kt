@@ -16,12 +16,12 @@ class IncrementalTranscriptSanitizerTest {
 
     @Test
     fun `rejects a short single-token decoder loop`() {
-        assertEquals(
-            "",
-            IncrementalTranscriptSanitizer.sanitize(
-                "hola hola hola hola hola mundo",
-            ),
+        val result = IncrementalTranscriptSanitizer.inspect(
+            "hola hola hola hola hola mundo",
         )
+
+        assertEquals("", result.text)
+        assertEquals(true, result.suppressedRepetition)
     }
 
     @Test

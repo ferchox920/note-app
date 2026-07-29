@@ -330,6 +330,14 @@ fun RecordingScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (state.incrementalSuppressedRepetitionCount > 0) {
+                Text(
+                    "Hipótesis repetitivas suprimidas: " +
+                        state.incrementalSuppressedRepetitionCount,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             state.incrementalFinalizedSegments.forEach { segment ->
                 Text(
                     "[${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}] " +

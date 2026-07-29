@@ -269,12 +269,14 @@ class AudioCaptureService : Service() {
                     language = "es",
                     lowLatency = true,
                 )
+                val sanitized = IncrementalTranscriptSanitizer.inspect(
+                    result.segments.joinToString(" ") { it.text.trim() }.trim(),
+                )
                 IncrementalInferenceResult(
-                    text = IncrementalTranscriptSanitizer.sanitize(
-                        result.segments.joinToString(" ") { it.text.trim() }.trim(),
-                    ),
+                    text = sanitized.text,
                     inferenceDurationMs = result.inferenceDurationMs,
                     realTimeFactor = result.realTimeFactor,
+                    suppressedRepetition = sanitized.suppressedRepetition,
                     nativeTimings = result.nativeTimings,
                 )
             },
@@ -600,6 +602,7 @@ class AudioCaptureService : Service() {
                 incrementalDroppedPartialCount = incrementalState.droppedPartialCount,
                 incrementalPartialCount = incrementalState.partialCount,
                 incrementalStableConflictCount = incrementalState.stableConflictCount,
+                incrementalSuppressedRepetitionCount = incrementalState.suppressedRepetitionCount,
                 incrementalTimeToFirstTextMs = incrementalState.timeToFirstTextMs,
                 incrementalLastVisibleLatencyMs = incrementalState.lastVisibleLatencyMs,
                 incrementalLastRealTimeFactor = incrementalState.lastRealTimeFactor,

@@ -21,8 +21,8 @@ un RTF artificialmente bajo.
 - informa `totalInferenceDurationMs` y `reusedResultCount`;
 - calcula `weightedRealTimeFactor` como inferencia total dividida por cobertura
   temporal única;
-- usa esquema de salida 3 e incluye el desglose nativo de sample, encode, decode,
-  batch y prompt por inferencia.
+- usa esquema de salida 4 e incluye el desglose nativo de sample, encode, decode,
+  batch y prompt por inferencia, además de hipótesis suprimidas por repetición.
 
 Una prueba de regresión demuestra el caso crítico: dos ventanas idénticas de 4 s
 ya cubren 4.000 ms, no 8.000 ms. Con 5.000 ms de inferencia el RTF correcto es
@@ -144,7 +144,9 @@ un corpus válido para decidir precisión. G2 continúa pendiente.
 Antes de mostrar una hipótesis, el pipeline ahora detecta loops consecutivos de
 palabras o frases y suprime los casos dominados por repetición. No intenta
 "corregir" palabras: solamente evita estabilizar una salida técnicamente rápida
-pero evidentemente degenerada.
+pero evidentemente degenerada. Cada evento conserva
+`suppressedRepetition=true`; el JSON, el reporte y la UI muestran el total para
+que una omisión protectora nunca sea silenciosa.
 
 ## Siguiente medición física controlada
 

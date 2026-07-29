@@ -34,6 +34,7 @@ class IncrementalTranscriptStore {
                 visibleLatencyMs = item.getLong("visibleLatencyMs"),
                 realTimeFactor = item.getDouble("realTimeFactor"),
                 reusedResult = item.optBoolean("reusedResult", false),
+                suppressedRepetition = item.optBoolean("suppressedRepetition", false),
                 nativeTimings = item.optJSONObject("nativeTimings")?.let { timings ->
                     WhisperNativeTimings(
                         sampleMs = timings.optDouble("sampleMs").toFloat(),
@@ -54,6 +55,7 @@ class IncrementalTranscriptStore {
             droppedPartialCount = json.optLong("droppedPartialCount"),
             partialCount = json.optInt("partialCount"),
             stableConflictCount = json.optInt("stableConflictCount"),
+            suppressedRepetitionCount = json.optInt("suppressedRepetitionCount"),
             timeToFirstTextMs = json.optionalLong("timeToFirstTextMs"),
             lastVisibleLatencyMs = json.optionalLong("lastVisibleLatencyMs"),
             lastRealTimeFactor = json.optionalDouble("lastRealTimeFactor"),
@@ -90,6 +92,7 @@ class IncrementalTranscriptStore {
                     put("visibleLatencyMs", metric.visibleLatencyMs)
                     put("realTimeFactor", metric.realTimeFactor)
                     put("reusedResult", metric.reusedResult)
+                    put("suppressedRepetition", metric.suppressedRepetition)
                     put("nativeTimings", JSONObject().apply {
                         put("sampleMs", metric.nativeTimings.sampleMs.toDouble())
                         put("encodeMs", metric.nativeTimings.encodeMs.toDouble())
@@ -101,7 +104,7 @@ class IncrementalTranscriptStore {
             }
         }
         val json = JSONObject().apply {
-            put("schemaVersion", 3)
+            put("schemaVersion", 4)
             put("modelId", modelId)
             put("capturePipelineId", capturePipelineId)
             put("language", "es")
@@ -110,6 +113,7 @@ class IncrementalTranscriptStore {
             put("partialCount", state.partialCount)
             put("droppedPartialCount", state.droppedPartialCount)
             put("stableConflictCount", state.stableConflictCount)
+            put("suppressedRepetitionCount", state.suppressedRepetitionCount)
             put("timeToFirstTextMs", state.timeToFirstTextMs ?: JSONObject.NULL)
             put("lastVisibleLatencyMs", state.lastVisibleLatencyMs ?: JSONObject.NULL)
             put("lastRealTimeFactor", state.lastRealTimeFactor ?: JSONObject.NULL)

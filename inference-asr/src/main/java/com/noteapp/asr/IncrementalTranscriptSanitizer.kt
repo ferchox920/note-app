@@ -8,19 +8,26 @@ package com.noteapp.asr
  * by at least half after collapsing consecutive repeated n-grams.
  */
 object IncrementalTranscriptSanitizer {
-    fun sanitize(text: String): String {
+    data class Result(
+        val text: String,
+        val suppressedRepetition: Boolean,
+    )
+
+    fun sanitize(text: String): String = inspect(text).text
+
+    fun inspect(text: String): Result {
         val tokens = text.trim().split(Regex("\\s+")).filter(String::isNotBlank)
-        if (tokens.size < MINIMUM_TOKENS) return text.trim()
+        if (tokens.size < MINIMUM_TOKENS) return Result(text.trim(), false)
         val collapsed = collapseConsecutiveRepetitions(tokens)
         val compressionRatio = collapsed.size.toDouble() / tokens.size
-        return if (
+        val suppressed = (
             collapsed.repetitionRunCount >= SHORT_LOOP_REPETITIONS ||
-            (tokens.size >= LONG_HYPOTHESIS_TOKENS && compressionRatio <= MAX_COMPRESSION_RATIO)
-        ) {
-            ""
-        } else {
-            text.trim()
-        }
+                (tokens.size >= LONG_HYPOTHESIS_TOKENS && compressionRatio <= MAX_COMPRESSION_RATIO)
+            )
+        return Result(
+            text = if (suppressed) "" else text.trim(),
+            suppressedRepetition = suppressed,
+        )
     }
 
     private fun collapseConsecutiveRepetitions(tokens: List<String>): CollapseResult {

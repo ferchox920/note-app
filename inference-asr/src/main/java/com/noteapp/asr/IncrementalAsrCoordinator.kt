@@ -17,6 +17,7 @@ data class IncrementalInferenceResult(
     val text: String,
     val inferenceDurationMs: Long,
     val realTimeFactor: Double,
+    val suppressedRepetition: Boolean = false,
     val nativeTimings: WhisperNativeTimings = WhisperNativeTimings(
         sampleMs = 0f,
         encodeMs = 0f,
@@ -46,6 +47,7 @@ data class IncrementalInferenceMetric(
     val visibleLatencyMs: Long,
     val realTimeFactor: Double,
     val reusedResult: Boolean = false,
+    val suppressedRepetition: Boolean = false,
     val nativeTimings: WhisperNativeTimings = WhisperNativeTimings(
         sampleMs = 0f,
         encodeMs = 0f,
@@ -64,6 +66,7 @@ data class IncrementalAsrState(
     val droppedPartialCount: Long = 0,
     val partialCount: Int = 0,
     val stableConflictCount: Int = 0,
+    val suppressedRepetitionCount: Int = 0,
     val timeToFirstTextMs: Long? = null,
     val lastVisibleLatencyMs: Long? = null,
     val lastRealTimeFactor: Double? = null,
@@ -364,6 +367,7 @@ class IncrementalAsrCoordinator(
                 visibleLatencyMs = visibleLatencyMs,
                 realTimeFactor = if (reusedResult) 0.0 else result.realTimeFactor,
                 reusedResult = reusedResult,
+                suppressedRepetition = result.suppressedRepetition,
                 nativeTimings = if (reusedResult) ZERO_NATIVE_TIMINGS else result.nativeTimings,
             )
             current.copy(
@@ -373,6 +377,8 @@ class IncrementalAsrCoordinator(
                 inferenceMetrics = current.inferenceMetrics + metric,
                 partialCount = current.partialCount + if (task.final) 0 else 1,
                 stableConflictCount = current.stableConflictCount + if (transcript.stableConflict) 1 else 0,
+                suppressedRepetitionCount = current.suppressedRepetitionCount +
+                    if (result.suppressedRepetition) 1 else 0,
                 timeToFirstTextMs = current.timeToFirstTextMs ?: if (hasFirstText) {
                     (nanoTime() - startedAtNanos) / 1_000_000L
                 } else {

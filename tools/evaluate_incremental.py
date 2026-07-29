@@ -124,6 +124,7 @@ def summarize_session(
         "weightedRealTimeFactor": weighted_rtf,
         "droppedPartialCount": int(data.get("droppedPartialCount", 0)),
         "stableConflictCount": int(data.get("stableConflictCount", 0)),
+        "suppressedRepetitionCount": int(data.get("suppressedRepetitionCount", 0)),
         "errorCode": error_code,
         "automaticThresholds": automatic_thresholds,
         "eligibleForManualG2Review": all(automatic_thresholds.values()),
@@ -155,6 +156,9 @@ def aggregate_sessions(rows: list[dict[str, object]]) -> dict[str, dict[str, obj
             "worstSessionWeightedRealTimeFactor": max(float(row["weightedRealTimeFactor"]) for row in selected),
             "droppedPartialCount": sum(int(row["droppedPartialCount"]) for row in selected),
             "stableConflictCount": sum(int(row["stableConflictCount"]) for row in selected),
+            "suppressedRepetitionCount": sum(
+                int(row.get("suppressedRepetitionCount", 0)) for row in selected
+            ),
             "allEligibleForManualG2Review": all(bool(row["eligibleForManualG2Review"]) for row in selected),
             "worstSessionWordErrorRate": max(word_error_rates) if word_error_rates else None,
         }
@@ -187,7 +191,7 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     report = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "note": "Automatic thresholds do not approve G2; manual duplication and capture-stability review remains required.",
         "configurations": aggregate_sessions(rows),
         "sessions": rows,
