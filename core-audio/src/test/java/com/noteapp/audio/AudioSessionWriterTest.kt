@@ -203,7 +203,7 @@ class AudioSessionWriterTest {
     }
 
     @Test
-    fun `encrypted recovery adopts authenticated prefix after interrupted final frame`() {
+    fun `encrypted recovery is idempotent after interrupted final frame`() {
         val artifactStore = EncryptedSessionArtifactStore(
             root,
             SecretKeySpec(ByteArray(32) { (it + 19).toByte() }, "AES"),
@@ -234,9 +234,24 @@ class AudioSessionWriterTest {
             expectedFormat = format,
             artifactStore = artifactStore,
         )
+        val repeatedBeforeCheckpoint = AudioSessionWriter.recover(
+            rootDirectory = root,
+            sessionId = "encrypted-crash-session",
+            expectedFormat = format,
+            artifactStore = artifactStore,
+        )
+        recovered.writeCheckpoint(SessionStatus.RECOVERING)
+        val repeatedAfterCheckpoint = AudioSessionWriter.recover(
+            rootDirectory = root,
+            sessionId = "encrypted-crash-session",
+            expectedFormat = format,
+            artifactStore = artifactStore,
+        )
 
         assertEquals(retained.size.toLong(), recovered.totalBytes)
         assertEquals(1, recovered.completedSegments.size)
+        assertEquals(recovered.completedSegments, repeatedBeforeCheckpoint.completedSegments)
+        assertEquals(recovered.completedSegments, repeatedAfterCheckpoint.completedSegments)
         assertEquals(
             "f21a4ebabade404b8c0d2abceab8945b55df224e282aefdcf743fa0913c67920",
             recovered.completedSegments.single().sha256,

@@ -159,6 +159,12 @@ class VerifySessionArtifactsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             verify_session(self.session)
 
+    def test_encrypted_checkpoint_requires_on_device_audit(self):
+        (self.session / "checkpoint.json").write_bytes(b"NAARTF01" + bytes(64))
+
+        with self.assertRaisesRegex(ValueError, "on-device Sprint 4 audit"):
+            verify_session(self.session)
+
     def test_rejects_incremental_duration_inconsistent_with_window(self):
         path = self.session / "incremental-transcript.json"
         data = json.loads(path.read_text(encoding="utf-8"))

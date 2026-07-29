@@ -296,6 +296,12 @@ def verify_session(
 ) -> dict[str, object]:
     checkpoint_path = session_dir / "checkpoint.json"
     require(checkpoint_path.is_file(), "Missing checkpoint.json")
+    with checkpoint_path.open("rb") as checkpoint_stream:
+        checkpoint_magic = checkpoint_stream.read(8)
+    require(
+        checkpoint_magic != b"NAARTF01",
+        "Encrypted session artifacts require the on-device Sprint 4 audit",
+    )
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     require(checkpoint.get("schemaVersion") == 1, "Unsupported checkpoint schema")
     require(checkpoint["status"] == expected_status, f"Expected status {expected_status}, found {checkpoint['status']}")
