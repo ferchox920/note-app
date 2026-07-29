@@ -255,6 +255,11 @@ los checkpoints agregan únicamente métricas nuevas a un journal. El JSON
 autocontenido se materializa una sola vez al finalizar. Un soak JVM equivalente
 a 45 minutos validó 27.000 métricas y 270 checkpoints, incluida recuperación de
 una cola no confirmada.
+La UX incremental ya separa el segmento final del texto provisional sin repetir
+el prefijo confirmado. Los segmentos finalizados se recorren con anterior,
+siguiente o selector de timestamp, usando `hh:mm:ss` en sesiones de una hora o
+más. Esta navegación es textual; el salto al audio requerirá el reproductor PCM
+de sesiones y no se declara implementado todavía.
 Whisper base no se activa automáticamente como refinamiento: una repetición en
 frío sobre esta entrada superó RTF 1 sin completar y los intentos diagnósticos
 acotados fueron revertidos. G2 sigue pendiente hasta una prueba continua de
@@ -270,8 +275,10 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
 - P0. Implementar overlap de 0,5 a 1 segundo.
 - P0. Reconciliar hipótesis y confirmar solo el prefijo estable.
 - P0. Cerrar segmentos ante silencio o límite de duración.
-- P0. Separar visualmente texto provisional y texto final.
-- P0. Añadir timestamps navegables por segmento.
+- P0. Separar visualmente texto provisional y texto final. Implementado y
+  confirmado en el S25 Ultra con una sesión persistida.
+- P0. Añadir timestamps navegables por segmento. Implementada la navegación
+  textual; queda pendiente enlazarla al futuro reproductor PCM.
 - P1. Ejecutar refinamiento final al cerrar cada segmento sin bloquear la captura.
 - P1. Aplicar backpressure y límites de cola para evitar acumulación indefinida.
 

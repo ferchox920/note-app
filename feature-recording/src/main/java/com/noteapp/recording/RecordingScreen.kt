@@ -16,17 +16,27 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -178,19 +188,10 @@ fun RecordingScreen(
             }
         }
         if (state.status == SessionStatus.NEW && state.completedSessions.isNotEmpty()) {
-            Text("Sesiones completadas para laboratorio", modifier = Modifier.padding(top = 12.dp))
-            state.completedSessions.forEach { session ->
-                Button(
-                    enabled = !state.asrRunning && session.id != state.labSessionId,
-                    onClick = { onSelectLabSession(session.id) },
-                    modifier = Modifier.padding(top = 6.dp),
-                ) {
-                    Text(
-                        (if (session.id == state.labSessionId) "En uso " else "Usar ") +
-                            "${session.id.take(8)} (${formatDuration(session.durationMs)})",
-                    )
-                }
-            }
+            CompletedSessionSelector(
+                state = state,
+                onSelectLabSession = onSelectLabSession,
+            )
         }
         Text("Duración: ${formatDuration(state.durationMs)}")
         Text("PCM escrito: ${state.bytesWritten} bytes")
@@ -313,15 +314,7 @@ fun RecordingScreen(
                     state.incrementalDroppedPartialCount,
                 style = MaterialTheme.typography.bodySmall,
             )
-            if (state.incrementalStableText.isNotBlank()) {
-                Text(state.incrementalStableText)
-            }
-            if (state.incrementalUnstableText.isNotBlank()) {
-                Text(
-                    state.incrementalUnstableText,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
+            IncrementalTranscriptPanel(state)
             if (state.incrementalAsrRunning) {
                 Text("Procesando ventana ASR…", style = MaterialTheme.typography.bodySmall)
             }
@@ -350,13 +343,6 @@ fun RecordingScreen(
                     "Hipótesis repetitivas suprimidas: " +
                         state.incrementalSuppressedRepetitionCount,
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            state.incrementalFinalizedSegments.forEach { segment ->
-                Text(
-                    "[${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}] " +
-                        segment.text,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -483,6 +469,191 @@ fun RecordingScreen(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 12.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun CompletedSessionSelector(
+    state: RecordingUiState,
+    onSelectLabSession: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = state.completedSessions.firstOrNull { it.id == state.labSessionId }
+        ?: state.completedSessions.first()
+    Text(
+        "Sesión completada",
+        modifier = Modifier.padding(top = 12.dp),
+        style = MaterialTheme.typography.titleSmall,
+    )
+    TextButton(
+        enabled = !state.asrRunning,
+        onClick = { expanded = true },
+        modifier = Modifier.semantics {
+            contentDescription = "Elegir sesión completada"
+        },
+    ) {
+        Text("${selected.id.take(8)} (${formatDuration(selected.durationMs)})")
+    }
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false },
+    ) {
+        state.completedSessions.forEach { session ->
+            DropdownMenuItem(
+                text = {
+                    Text("${session.id.take(8)} (${formatDuration(session.durationMs)})")
+                },
+                onClick = {
+                    expanded = false
+                    onSelectLabSession(session.id)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun IncrementalTranscriptPanel(state: RecordingUiState) {
+    val presentation = remember(
+        state.incrementalStableText,
+        state.incrementalUnstableText,
+        state.incrementalFinalizedSegments,
+    ) {
+        incrementalTranscriptPresentation(
+            stableText = state.incrementalStableText,
+            unstableText = state.incrementalUnstableText,
+            finalizedSegments = state.incrementalFinalizedSegments,
+        )
+    }
+    val segments = presentation.finalizedSegments
+    val transcriptKey = state.sessionId ?: state.labSessionId
+    var selectedIndex by rememberSaveable(transcriptKey) { mutableIntStateOf(-1) }
+    var followLatest by rememberSaveable(transcriptKey) { mutableStateOf(true) }
+    var timestampMenuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(transcriptKey, segments.size) {
+        selectedIndex = when {
+            segments.isEmpty() -> -1
+            selectedIndex !in segments.indices || followLatest -> segments.lastIndex
+            else -> selectedIndex
+        }
+    }
+
+    Text(
+        "Texto finalizado",
+        modifier = Modifier.padding(top = 12.dp),
+        style = MaterialTheme.typography.titleSmall,
+    )
+    if (segments.isEmpty()) {
+        Text(
+            "Aún no hay segmentos cerrados.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    } else {
+        val safeIndex = selectedIndex.coerceIn(0, segments.lastIndex)
+        val selected = segments[safeIndex]
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(top = 6.dp),
+        ) {
+            TextButton(
+                onClick = { timestampMenuExpanded = true },
+                modifier = Modifier.semantics {
+                    contentDescription = "Elegir segmento por timestamp"
+                },
+            ) {
+                Text(transcriptSegmentRange(selected))
+            }
+            DropdownMenu(
+                expanded = timestampMenuExpanded,
+                onDismissRequest = { timestampMenuExpanded = false },
+            ) {
+                segments.forEachIndexed { index, segment ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "${index + 1}. ${transcriptSegmentRange(segment)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        },
+                        onClick = {
+                            selectedIndex = index
+                            followLatest = index == segments.lastIndex
+                            timestampMenuExpanded = false
+                        },
+                    )
+                }
+            }
+            Text(
+                "Segmento ${safeIndex + 1} de ${segments.size}",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 4.dp),
+            ) {
+                OutlinedButton(
+                    enabled = safeIndex > 0,
+                    onClick = {
+                        selectedIndex = safeIndex - 1
+                        followLatest = false
+                    },
+                ) {
+                    Text("Anterior")
+                }
+                OutlinedButton(
+                    enabled = safeIndex < segments.lastIndex,
+                    onClick = {
+                        selectedIndex = safeIndex + 1
+                        followLatest = safeIndex + 1 == segments.lastIndex
+                    },
+                ) {
+                    Text("Siguiente")
+                }
+            }
+        }
+        Surface(
+            tonalElevation = 2.dp,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            SelectionContainer {
+                Text(
+                    selected.text,
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+
+    if (presentation.hasProvisionalText) {
+        Text(
+            "Texto provisional · puede cambiar",
+            modifier = Modifier.padding(top = 12.dp),
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.padding(top = 6.dp),
+        ) {
+            SelectionContainer {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    if (presentation.provisionalStableText.isNotBlank()) {
+                        Text(presentation.provisionalStableText)
+                    }
+                    if (presentation.provisionalUnstableText.isNotBlank()) {
+                        Text(
+                            presentation.provisionalUnstableText,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontStyle = FontStyle.Italic,
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -69,6 +69,9 @@ class IncrementalTranscriptStoreTest {
         assertEquals(3, finalSnapshot.getJSONArray("inferenceMetrics").length())
         assertFalse(File(directory, IncrementalTranscriptStore.JOURNAL_FILE_NAME).exists())
         assertEquals(3, store.read(directory)?.inferenceMetrics?.size)
+        val document = store.readDocument(directory)
+        assertEquals("streaming-es", document?.modelId)
+        assertEquals("direct-16k", document?.capturePipelineId)
     }
 
     @Test

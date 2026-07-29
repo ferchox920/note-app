@@ -324,6 +324,42 @@ verificó continuidad, recuperación y materialización final en 1,33 s en la
 máquina de desarrollo. Es una prueba determinista de complejidad y consistencia,
 no sustituye la medición de CPU, memoria, batería o almacenamiento en el S25.
 
+### Presentación final y provisional
+
+La pantalla anterior mostraba `stableText` completo y después volvía a listar
+cada segmento finalizado, duplicando visualmente el texto. La proyección de UI
+ahora:
+
+- descuenta del bloque estable el prefijo ya representado por segmentos finales;
+- conserva el texto completo si el prefijo no coincide, para no ocultar una
+  discrepancia de recuperación;
+- presenta un único segmento final a la vez, con anterior/siguiente y selector
+  por rango temporal;
+- sigue automáticamente el segmento más reciente hasta que la persona navega
+  hacia atrás;
+- marca la cola estable/no estable como «Texto provisional · puede cambiar»;
+- usa `mm:ss` y cambia a `hh:mm:ss` a partir de una hora.
+
+Cuatro pruebas unitarias cubren deduplicación, sesión completamente finalizada,
+fallback conservador y formato de sesiones largas. Compilación y lint pasan. La
+navegación actual recorre texto por timestamps; no salta al audio porque el
+reproductor PCM aún no forma parte de esta pantalla.
+
+El 2026-07-29 se instaló el APK debug en el S25 Ultra `SM-S938B` y se abrió una
+sesión incremental persistida, sin volver a grabar ni transcribir. El smoke visual
+confirmó que:
+
+- el selector de sesiones ocupa un único control compacto;
+- el texto final no aparece duplicado como provisional;
+- anterior y siguiente cambian el segmento y su rango;
+- el menú temporal expone los diez segmentos persistidos;
+- cambiar de sesión restablece el navegador al documento seleccionado.
+
+La verificación completa `gradlew build lint test` también pasa localmente. Para
+que el mismo control sea reproducible en el runner Ubuntu, la metadata de
+dependencias incluye tanto el artefacto `aapt2` de Windows como su variante Linux,
+verificada contra Google Maven.
+
 Un intento de repetir Whisper base inmediatamente después de la lectura fue
 cancelado de forma segura: superó tres minutos con ocupación sostenida de varios
 núcleos y la piel llegó a 37,9 °C, cerca del primer umbral térmico de 38 °C. No

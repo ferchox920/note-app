@@ -10,8 +10,17 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
+data class IncrementalTranscriptDocument(
+    val modelId: String,
+    val capturePipelineId: String,
+    val state: IncrementalAsrState,
+)
+
 class IncrementalTranscriptStore {
-    fun read(sessionDirectory: File): IncrementalAsrState? {
+    fun read(sessionDirectory: File): IncrementalAsrState? =
+        readDocument(sessionDirectory)?.state
+
+    fun readDocument(sessionDirectory: File): IncrementalTranscriptDocument? {
         val file = File(sessionDirectory, FILE_NAME)
         if (!file.isFile) return null
         val json = JSONObject(file.readText(Charsets.UTF_8))
@@ -36,22 +45,26 @@ class IncrementalTranscriptStore {
                 metricFromJson(jsonMetrics.getJSONObject(index))
             }
         }
-        return IncrementalAsrState(
-            enabled = true,
-            // An interrupted active hypothesis is intentionally discarded; only
-            // endpoint-finalized segments are safe to restore as immutable text.
-            stableText = segments.joinToString(" ") { it.text }.trim(),
-            unstableText = "",
-            droppedPartialCount = json.optLong("droppedPartialCount"),
-            partialCount = json.optInt("partialCount"),
-            stableConflictCount = json.optInt("stableConflictCount"),
-            suppressedRepetitionCount = json.optInt("suppressedRepetitionCount"),
-            timeToFirstTextMs = json.optionalLong("timeToFirstTextMs"),
-            lastVisibleLatencyMs = json.optionalLong("lastVisibleLatencyMs"),
-            lastRealTimeFactor = json.optionalDouble("lastRealTimeFactor"),
-            finalizedSegments = segments,
-            inferenceMetrics = metrics.toPersistentList(),
-            errorCode = json.optionalString("errorCode"),
+        return IncrementalTranscriptDocument(
+            modelId = json.getString("modelId"),
+            capturePipelineId = json.optString("capturePipelineId", "unknown"),
+            state = IncrementalAsrState(
+                enabled = true,
+                // An interrupted active hypothesis is intentionally discarded; only
+                // endpoint-finalized segments are safe to restore as immutable text.
+                stableText = segments.joinToString(" ") { it.text }.trim(),
+                unstableText = "",
+                droppedPartialCount = json.optLong("droppedPartialCount"),
+                partialCount = json.optInt("partialCount"),
+                stableConflictCount = json.optInt("stableConflictCount"),
+                suppressedRepetitionCount = json.optInt("suppressedRepetitionCount"),
+                timeToFirstTextMs = json.optionalLong("timeToFirstTextMs"),
+                lastVisibleLatencyMs = json.optionalLong("lastVisibleLatencyMs"),
+                lastRealTimeFactor = json.optionalDouble("lastRealTimeFactor"),
+                finalizedSegments = segments,
+                inferenceMetrics = metrics.toPersistentList(),
+                errorCode = json.optionalString("errorCode"),
+            ),
         )
     }
 

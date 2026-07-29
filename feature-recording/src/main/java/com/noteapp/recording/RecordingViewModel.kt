@@ -14,7 +14,9 @@ import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
 import com.noteapp.asr.AsrLabConfig
+import com.noteapp.asr.IncrementalTranscriptDocument
 import com.noteapp.asr.IncrementalTranscriptSegment
+import com.noteapp.asr.IncrementalTranscriptStore
 import com.noteapp.asr.ModelVerificationResult
 import com.noteapp.asr.SherpaStreamingLabConfig
 import com.noteapp.asr.SherpaStreamingLabResult
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -92,12 +95,24 @@ class RecordingViewModel @Inject constructor(
 ) : ViewModel() {
     private val asrState = MutableStateFlow(AsrUiState())
     private val modelsDirectory = File(applicationContext.filesDir, "models")
+    private val incrementalTranscriptStore = IncrementalTranscriptStore()
 
     val uiState: StateFlow<RecordingUiState> = combine(controller.state, asrState) { runtime, asr ->
+            val storedTranscript = asr.selectedIncrementalTranscript.takeIf {
+                runtime.status == SessionStatus.NEW &&
+                    asr.selectedLabSessionId != null
+            }
+            val storedState = storedTranscript?.state
+            val selectedSession = asr.completedSessions.firstOrNull {
+                it.id == asr.selectedLabSessionId
+            }
             RecordingUiState(
                 sessionId = runtime.sessionId,
                 status = runtime.status,
-                durationMs = runtime.durationMs,
+                durationMs = selectedSession
+                    ?.durationMs
+                    ?.takeIf { runtime.status == SessionStatus.NEW }
+                    ?: runtime.durationMs,
                 bytesWritten = runtime.bytesWritten,
                 errorCode = runtime.errorCode,
                 speechDetected = runtime.speechDetected,
@@ -116,26 +131,43 @@ class RecordingViewModel @Inject constructor(
                 readErrorCount = runtime.readErrorCount,
                 discontinuityCount = runtime.discontinuityCount,
                 estimatedMissingFrames = runtime.estimatedMissingFrames,
-                capturePipelineId = runtime.capturePipelineId,
+                capturePipelineId = storedTranscript?.capturePipelineId
+                    ?: runtime.capturePipelineId,
                 captureSampleRateHz = runtime.captureSampleRateHz,
                 vadComparisonRunning = asr.vadComparisonRunning,
                 vadComparisonResult = asr.vadComparisonResult,
                 vadComparisonError = asr.vadComparisonError,
-                incrementalAsrEnabled = runtime.incrementalAsrEnabled,
-                incrementalModelId = runtime.incrementalModelId,
-                incrementalStableText = runtime.incrementalStableText,
-                incrementalUnstableText = runtime.incrementalUnstableText,
-                incrementalAsrRunning = runtime.incrementalAsrRunning,
-                incrementalQueueDepth = runtime.incrementalQueueDepth,
-                incrementalDroppedPartialCount = runtime.incrementalDroppedPartialCount,
-                incrementalPartialCount = runtime.incrementalPartialCount,
-                incrementalStableConflictCount = runtime.incrementalStableConflictCount,
-                incrementalSuppressedRepetitionCount = runtime.incrementalSuppressedRepetitionCount,
-                incrementalTimeToFirstTextMs = runtime.incrementalTimeToFirstTextMs,
-                incrementalLastVisibleLatencyMs = runtime.incrementalLastVisibleLatencyMs,
-                incrementalLastRealTimeFactor = runtime.incrementalLastRealTimeFactor,
-                incrementalAsrErrorCode = runtime.incrementalAsrErrorCode,
-                incrementalFinalizedSegments = runtime.incrementalFinalizedSegments,
+                incrementalAsrEnabled = storedState?.enabled
+                    ?: runtime.incrementalAsrEnabled,
+                incrementalModelId = storedTranscript?.modelId
+                    ?: runtime.incrementalModelId,
+                incrementalStableText = storedState?.stableText
+                    ?: runtime.incrementalStableText,
+                incrementalUnstableText = storedState?.unstableText
+                    ?: runtime.incrementalUnstableText,
+                incrementalAsrRunning = storedState?.running
+                    ?: runtime.incrementalAsrRunning,
+                incrementalQueueDepth = storedState?.queueDepth
+                    ?: runtime.incrementalQueueDepth,
+                incrementalDroppedPartialCount = storedState?.droppedPartialCount
+                    ?: runtime.incrementalDroppedPartialCount,
+                incrementalPartialCount = storedState?.partialCount
+                    ?: runtime.incrementalPartialCount,
+                incrementalStableConflictCount = storedState?.stableConflictCount
+                    ?: runtime.incrementalStableConflictCount,
+                incrementalSuppressedRepetitionCount = storedState?.suppressedRepetitionCount
+                    ?: runtime.incrementalSuppressedRepetitionCount,
+                incrementalTimeToFirstTextMs = storedState?.timeToFirstTextMs
+                    ?: runtime.incrementalTimeToFirstTextMs,
+                incrementalLastVisibleLatencyMs = storedState?.lastVisibleLatencyMs
+                    ?: runtime.incrementalLastVisibleLatencyMs,
+                incrementalLastRealTimeFactor = storedState?.lastRealTimeFactor
+                    ?: runtime.incrementalLastRealTimeFactor,
+                incrementalAsrErrorCode = storedState?.errorCode
+                    ?: asr.selectedIncrementalError
+                    ?: runtime.incrementalAsrErrorCode,
+                incrementalFinalizedSegments = storedState?.finalizedSegments
+                    ?: runtime.incrementalFinalizedSegments,
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordingUiState())
@@ -255,9 +287,29 @@ class RecordingViewModel @Inject constructor(
         }
         asrState.value = asrState.value.copy(
             selectedLabSessionId = sessionId,
+            selectedIncrementalTranscript = null,
+            selectedIncrementalError = null,
             result = null,
             error = null,
         )
+        loadIncrementalTranscript(sessionId)
+    }
+
+    private fun loadIncrementalTranscript(sessionId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val loaded = runCatching {
+                incrementalTranscriptStore.readDocument(
+                    File(applicationContext.filesDir, "recordings/$sessionId"),
+                )
+            }
+            if (asrState.value.selectedLabSessionId != sessionId) return@launch
+            asrState.value = asrState.value.copy(
+                selectedIncrementalTranscript = loaded.getOrNull(),
+                selectedIncrementalError = loaded.exceptionOrNull()?.let {
+                    "INCREMENTAL_TRANSCRIPT_READ_FAILED"
+                },
+            )
+        }
     }
 
     fun compareVad() {
@@ -312,7 +364,16 @@ class RecordingViewModel @Inject constructor(
     private fun refreshCompletedSessions() {
         viewModelScope.launch {
             val sessions = checkpointStore.findCompleted()
-            asrState.value = asrState.value.copy(completedSessions = sessions)
+            val selectedSessionId = asrState.value.selectedLabSessionId
+                ?.takeIf { selected -> sessions.any { it.id == selected } }
+                ?: sessions.firstOrNull()?.id
+            asrState.value = asrState.value.copy(
+                completedSessions = sessions,
+                selectedLabSessionId = selectedSessionId,
+                selectedIncrementalTranscript = null,
+                selectedIncrementalError = null,
+            )
+            selectedSessionId?.let(::loadIncrementalTranscript)
         }
     }
 
@@ -325,6 +386,8 @@ class RecordingViewModel @Inject constructor(
         val recoverableSessions: List<RecordingSession> = emptyList(),
         val completedSessions: List<RecordingSession> = emptyList(),
         val selectedLabSessionId: String? = null,
+        val selectedIncrementalTranscript: IncrementalTranscriptDocument? = null,
+        val selectedIncrementalError: String? = null,
         val vadComparisonRunning: Boolean = false,
         val vadComparisonResult: VadComparisonResult? = null,
         val vadComparisonError: String? = null,

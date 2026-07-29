@@ -104,6 +104,9 @@ de captura y duplicaciones.
    recuperación conserve los segmentos finalizados sin restaurar una cola inestable.
 8. Confirmar que una sesión completada no conserve `incremental-metrics.jsonl` y
    que el JSON final contenga la secuencia completa y contigua de métricas.
+9. Comprobar en pantalla que el texto final no se repita dentro del provisional,
+   que anterior/siguiente y el selector temporal recorran todos los segmentos, y
+   que la cola provisional esté identificada como contenido que puede cambiar.
 
 Extraer y validar la evidencia desde la APK debug con:
 
