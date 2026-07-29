@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(project(":core-audio"))
+    debugImplementation(project(":core-security"))
     androidTestImplementation(project(":core-security"))
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)

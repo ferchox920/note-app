@@ -12,12 +12,15 @@ param(
 $ErrorActionPreference = "Stop"
 $packageName = "com.noteapp"
 $serviceName = "$packageName/.audio.AudioCaptureService"
+$diagnosticsUri = "content://$packageName.diagnostics/session/$SessionId"
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectDirectory = Split-Path -Parent $scriptDirectory
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outputDirectory = Join-Path $projectDirectory "artifacts\private\g1-recovery\$SessionId-$timestamp"
 $baselineDirectory = Join-Path $outputDirectory "post-force-stop"
 $baselineArchive = Join-Path $outputDirectory "post-force-stop.tar"
+$finalDirectory = Join-Path $outputDirectory "final-ciphertext"
+$finalArchive = Join-Path $outputDirectory "final-ciphertext.tar"
 
 if (-not $Execute) {
     throw "This script intentionally force-stops Note App. Re-run with -Execute after confirming the test session ID."
@@ -39,10 +42,37 @@ function Invoke-AdbText {
 
 function Read-Checkpoint {
     $raw = Invoke-AdbText -CommandArguments @(
-        "shell", "run-as", $packageName, "cat",
-        "files/recordings/$SessionId/checkpoint.json"
+        "shell", "run-as", $packageName, "content", "query",
+        "--uri", $diagnosticsUri,
+        "--projection",
+        "status:durationMs:totalBytes:segmentCount:readErrorCount:discontinuityCount:estimatedMissingFrames"
     )
-    return $raw | ConvertFrom-Json
+    if ($raw -notmatch "Row:\s+0") {
+        throw "SESSION_DIAGNOSTICS_QUERY_FAILED"
+    }
+    $values = [ordered]@{}
+    foreach ($field in @(
+        "status",
+        "durationMs",
+        "totalBytes",
+        "segmentCount",
+        "readErrorCount",
+        "discontinuityCount",
+        "estimatedMissingFrames"
+    )) {
+        $match = [regex]::Match($raw, "(?:^|[,\s])$field=([^,\s]+)")
+        if (-not $match.Success) { throw "SESSION_DIAGNOSTIC_FIELD_MISSING" }
+        $values[$field] = $match.Groups[1].Value
+    }
+    return [pscustomobject]@{
+        status = [string]$values.status
+        durationMs = [long]$values.durationMs
+        totalBytes = [long]$values.totalBytes
+        segmentCount = [int]$values.segmentCount
+        readErrorCount = [int]$values.readErrorCount
+        discontinuityCount = [int]$values.discontinuityCount
+        estimatedMissingFrames = [long]$values.estimatedMissingFrames
+    }
 }
 
 function Wait-ForStatus {
@@ -88,7 +118,11 @@ function Send-ServiceCommand {
 }
 
 function Export-PrivateSession {
-    New-Item -ItemType Directory -Path $baselineDirectory -Force | Out-Null
+    param(
+        [string]$DestinationDirectory,
+        [string]$ArchivePath
+    )
+    New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
     $adbExecutable = (Get-Command $Adb -ErrorAction Stop).Source
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -107,7 +141,7 @@ function Export-PrivateSession {
     }) -join " "
     if (-not $process.Start()) { throw "Unable to start ADB extraction." }
     $stderrTask = $process.StandardError.ReadToEndAsync()
-    $archive = [System.IO.File]::Create($baselineArchive)
+    $archive = [System.IO.File]::Create($ArchivePath)
     try {
         $process.StandardOutput.BaseStream.CopyTo($archive)
     } finally {
@@ -118,7 +152,7 @@ function Export-PrivateSession {
     if ($process.ExitCode -ne 0) {
         throw "ADB extraction failed with exit code $($process.ExitCode): $stderr"
     }
-    $entries = @(& tar -tf $baselineArchive)
+    $entries = @(& tar -tf $ArchivePath)
     if ($LASTEXITCODE -ne 0) { throw "Unable to inspect the baseline archive." }
     foreach ($entry in $entries) {
         $normalized = $entry.Replace('\', '/')
@@ -126,8 +160,20 @@ function Export-PrivateSession {
             throw "Unsafe archive entry rejected: $entry"
         }
     }
-    & tar -xf $baselineArchive -C $baselineDirectory
+    & tar -xf $ArchivePath -C $DestinationDirectory
     if ($LASTEXITCODE -ne 0) { throw "Unable to extract the baseline archive." }
+}
+
+function Prepare-RecoveryPrefix {
+    $result = Invoke-AdbText -CommandArguments @(
+        "shell", "run-as", $packageName, "content", "call",
+        "--uri", $diagnosticsUri,
+        "--method", "prepare-recovery",
+        "--arg", $SessionId
+    )
+    if ($result -notmatch "RECOVERY_PREFIX_AUTHENTICATED") {
+        throw "RECOVERY_PREFIX_AUTHENTICATION_FAILED"
+    }
 }
 
 $deviceRows = & $Adb devices
@@ -150,7 +196,9 @@ $preCrashCheckpoint = Wait-ForDuration -MinimumDurationMs ([long]$MinimumPreCras
 
 Invoke-AdbText -CommandArguments @("shell", "am", "force-stop", $packageName) | Out-Null
 Start-Sleep -Seconds 2
-Export-PrivateSession
+$stoppedCheckpoint = Read-Checkpoint
+Prepare-RecoveryPrefix
+Export-PrivateSession -DestinationDirectory $baselineDirectory -ArchivePath $baselineArchive
 
 $baselineSegments = @(
     Get-ChildItem -LiteralPath $baselineDirectory -Filter "segment-*.pcm" -File |
@@ -167,7 +215,6 @@ if ($baselineSegments.Count -eq 0) { throw "No PCM segment was captured before f
 $baselineSegments | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $outputDirectory "post-force-stop-segments.json") -Encoding utf8
 
-$stoppedCheckpoint = Read-Checkpoint
 Invoke-AdbText -CommandArguments @(
     "shell", "am", "start", "-W", "-n", "$packageName/.MainActivity"
 ) | Out-Null
@@ -188,29 +235,13 @@ Start-Sleep -Seconds 10
 Send-ServiceCommand -Action "COMPLETE"
 $finalCheckpoint = Wait-ForStatus -ExpectedStatus "COMPLETED"
 
-$collectionStartedAt = Get-Date
-& (Join-Path $scriptDirectory "collect-device-session.ps1") `
-    -Adb $Adb `
-    -Serial $Serial `
-    -SessionId $SessionId `
-    -RequireLifecycleEvent STARTED,RECOVERY_STARTED,RECOVERED,PAUSED,RESUMED,COMPLETED
-if ($LASTEXITCODE -ne 0) { throw "Private collection or verification failed." }
-$deviceSessionsRoot = Join-Path $projectDirectory "artifacts\private\device-sessions"
-$collectedDirectory = Get-ChildItem -LiteralPath $deviceSessionsRoot -Directory |
-    Where-Object {
-        $_.Name -like "$SessionId-*" -and
-        $_.LastWriteTime -ge $collectionStartedAt.AddSeconds(-2)
-    } |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
-if (-not $collectedDirectory) { throw "Unable to locate the newly collected evidence directory." }
-$finalSessionDirectory = Join-Path $collectedDirectory "session"
+Export-PrivateSession -DestinationDirectory $finalDirectory -ArchivePath $finalArchive
 $finalSegments = @(
-    Get-ChildItem -LiteralPath $finalSessionDirectory -Filter "segment-*.pcm" -File |
+    Get-ChildItem -LiteralPath $finalDirectory -Filter "segment-*.pcm" -File |
         Sort-Object Name
 )
 foreach ($baseline in $baselineSegments) {
-    $candidate = Join-Path $finalSessionDirectory $baseline.fileName
+    $candidate = Join-Path $finalDirectory $baseline.fileName
     if (-not (Test-Path -LiteralPath $candidate)) {
         throw "Recovery removed pre-existing segment $($baseline.fileName)."
     }
@@ -224,6 +255,12 @@ if ($finalSegments.Count -le $baselineSegments.Count) {
     throw "Recovery did not append a new segment."
 }
 
+& (Join-Path $scriptDirectory "verify-s4-encrypted-artifacts.ps1") `
+    -Adb $Adb `
+    -Serial $Serial `
+    -Execute
+if ($LASTEXITCODE -ne 0) { throw "Encrypted on-device audit failed." }
+
 $report = [ordered]@{
     schemaVersion = 1
     sessionId = $SessionId
@@ -236,7 +273,10 @@ $report = [ordered]@{
     protectedSegmentCount = $baselineSegments.Count
     finalSegmentCount = $finalSegments.Count
     preExistingSegmentsPreserved = $true
-    collectionDirectory = $collectedDirectory
+    authenticatedPrefixPrepared = $true
+    encryptedOnDeviceAuditPassed = $true
+    recordingStartedByHarness = $false
+    transcriptionStartedByHarness = $false
     contentIncluded = $false
 }
 $reportPath = Join-Path $outputDirectory "recovery-case-summary.json"

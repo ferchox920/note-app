@@ -26,10 +26,13 @@ $adb = 'C:\Users\ferna\AppData\Local\Android\Sdk\platform-tools\adb.exe'
   -Execute
 ```
 
-El arnés espera 60 s de audio, ejecuta `am force-stop`, extrae una copia privada de
-todos los segmentos en ese instante, abre la app y recupera con origen
-`adb-harness`. Luego graba otros 60 s, pausa 10 s, reanuda, finaliza, recolecta la
-sesión y compara longitud y SHA-256 de cada PCM anterior a la recuperación.
+El arnés espera 60 s de audio, ejecuta `am force-stop` y usa el proveedor
+exclusivo de la build debug para autenticar el prefijo recuperable. El proveedor
+es `exported=false`, acepta solo llamadas del mismo UID y devuelve únicamente
+estado, duración y contadores; nunca audio ni texto. A continuación extrae una
+copia privada del **ciphertext** de los segmentos, abre la app y recupera con
+origen `adb-harness`. Luego graba otros 60 s, pausa 10 s, reanuda, finaliza y
+compara longitud y SHA-256 del ciphertext de cada segmento previo.
 
 La variante manual equivalente es:
 
@@ -45,8 +48,9 @@ La variante manual equivalente es:
 
 En `files/recordings/<sessionId>/`:
 
-- El segmento presente durante el crash fue adoptado después de comprobar longitud
-  PCM par y calcular SHA-256.
+- El segmento presente durante el crash descartó, como máximo, un frame final
+  incompleto; todos los frames conservados autenticaron con AES-GCM antes de
+  adoptar el prefijo.
 - La captura recuperada usa el siguiente `segment-NNNN.pcm`; ningún archivo previo
   fue truncado o sobrescrito.
 - `checkpoint.json` termina en `COMPLETED`, con offsets contiguos, tamaños reales y
@@ -58,18 +62,17 @@ En `files/recordings/<sessionId>/`:
 Registrar build, dispositivo, Android, duración y resultado sin copiar audio o
 transcripción sensible al repositorio.
 
-Tras finalizar, ejecutar:
-
-```powershell
-.\tools\collect-device-session.ps1 -SessionId <sessionId>
-```
-
-`verification.json` debe confirmar offsets/checksums contiguos y contadores de
-discontinuidad. El archivo privado extraído permite comprobar además que ningún
-segmento previo fue reemplazado.
+Tras finalizar, el mismo arnés ejecuta
+`tools/verify-s4-encrypted-artifacts.ps1`. La prueba instrumentada descifra dentro
+del proceso de la app, valida offsets, longitudes, SHA-256, etiquetas GCM,
+permisos, temporales e idempotencia, y solo emite un resumen sin contenido. Los
+archivos privados extraídos permanecen cifrados y permiten comprobar además que
+ningún segmento previo fue reemplazado.
 
 ## Caso negativo
 
-En una copia de laboratorio, alterar un byte de un segmento listado y repetir la
-recuperación. La app debe rechazarla con `AUDIO_RECOVERY_FAILED`; nunca debe anexar
-audio a una cadena cuyo checksum no coincida.
+En una copia de laboratorio, alterar un byte de un frame completo de un segmento
+listado y repetir la recuperación. La app debe rechazarla con
+`AUDIO_RECOVERY_FAILED`; únicamente un tail físicamente incompleto puede
+descartarse. Nunca debe anexar audio a una cadena cuya etiqueta o checksum no
+coincida.
