@@ -248,7 +248,14 @@ class AudioSessionWriter(
                 require(file.name == "segment-${expectedSequence.toString().padStart(4, '0')}.pcm") {
                     "Unexpected PCM segment during recovery"
                 }
+                artifactStore.recoverAppend(file)
                 val byteCount = artifactStore.plaintextSize(file)
+                if (byteCount == 0L) {
+                    check(artifactStore.delete(file)) {
+                        "Empty crash segment could not be removed"
+                    }
+                    return@forEachIndexed
+                }
                 require(byteCount > 0 && byteCount % 2L == 0L) {
                     "Incomplete PCM segment during recovery"
                 }

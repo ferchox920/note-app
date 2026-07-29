@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import javax.crypto.spec.SecretKeySpec
 
@@ -102,6 +103,34 @@ class IncrementalTranscriptStoreTest {
         assertTrue(artifacts.isEncrypted(journal))
         assertFalse(checkpoint.readText().contains("streaming-es"))
         assertEquals(3, encryptedStore.read(session)?.inferenceMetrics?.size)
+    }
+
+    @Test
+    fun `encrypted journal recovery drops an interrupted uncommitted append frame`() {
+        val root = directory.resolve("recordings").apply { mkdirs() }
+        val session = root.resolve("session-asr-crash").apply { mkdirs() }
+        val artifacts = EncryptedSessionArtifactStore(
+            root,
+            SecretKeySpec(ByteArray(32) { (it + 7).toByte() }, "AES"),
+        )
+        val encryptedStore = IncrementalTranscriptStore(artifacts)
+        encryptedStore.writeCheckpoint(
+            sessionDirectory = session,
+            modelId = "streaming-es",
+            capturePipelineId = "direct-16k",
+            state = stateWithMetrics(2),
+            persistedMetricCount = 0,
+        )
+        val journal = session.resolve(IncrementalTranscriptStore.JOURNAL_FILE_NAME)
+        artifacts.appendBytes(journal, """{"sequence":2}""".encodeToByteArray())
+        RandomAccessFile(journal, "rw").use { randomAccess ->
+            randomAccess.setLength(randomAccess.length() - 5)
+        }
+
+        val recovered = encryptedStore.read(session)
+
+        assertEquals(2, recovered?.inferenceMetrics?.size)
+        assertFalse(artifacts.recoverAppend(journal))
     }
 
     @Test

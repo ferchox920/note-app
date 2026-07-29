@@ -34,6 +34,9 @@ están deprecadas y tampoco resuelven el append de audio.
 - Escribir PCM y journals como secuencias de frames autenticados. Los JSON se
   cifran primero en un temporal, se sincronizan con `fsync` y reemplazan el
   destino mediante movimiento atómico.
+- Al recuperar un artefacto append-only, descartar únicamente un último frame
+  incompleto por cierre abrupto. Un frame completo cuya etiqueta no autentica,
+  una cabecera inválida o una ruta distinta siguen fallando de forma cerrada.
 - Migrar en `Dispatchers.IO` todos los archivos regulares bajo
   `files/recordings`, preservando nombres y contenido lógico. La migración es
   idempotente y recupera respaldos, temporales cifrados y temporales planos de
@@ -57,6 +60,11 @@ append autentica los frames existentes; los segmentos PCM nuevos no se
 reabren, mientras que el journal incremental es pequeño. La migración inicial
 lee, cifra y verifica los archivos y por eso se ejecuta fuera del hilo
 principal.
+
+Un cierre forzado puede interrumpir físicamente la escritura del último frame.
+La recuperación conserva todos los frames completos y autenticados anteriores,
+sin intentar interpretar ni conservar el tail parcial. El checkpoint y los
+checksums se recalculan sobre ese prefijo confirmado antes de continuar.
 
 Perder la clave de Keystore hace irrecuperables los artefactos por diseño. La
 app conserva el ciphertext, reporta el error y no genera una clave sustituta.

@@ -223,6 +223,7 @@ class IncrementalTranscriptStore(
             return emptyList()
         }
         require(journal.isFile) { "Missing incremental metric journal" }
+        artifactStore.recoverAppend(journal)
         val retainedLines = artifactStore.readText(journal)
             .lineSequence()
             .filter(String::isNotBlank)

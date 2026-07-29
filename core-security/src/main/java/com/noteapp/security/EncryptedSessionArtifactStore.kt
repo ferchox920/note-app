@@ -9,6 +9,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.FilterInputStream
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
@@ -53,7 +54,7 @@ class EncryptedSessionArtifactStore(
         if (file.exists() && !isEncrypted(file)) {
             migrateFile(file)
         }
-        val scan = if (file.isFile) scan(file) else ScanResult(0, 0)
+        val scan = if (file.isFile) scan(file, repairTruncatedTail = true) else ScanResult(0, 0)
         val header = headerFor(file)
         val output = FileOutputStream(file, true)
         return try {
@@ -74,6 +75,9 @@ class EncryptedSessionArtifactStore(
     }
 
     override fun plaintextSize(file: File): Long = scan(file).plaintextSize
+
+    override fun recoverAppend(file: File): Boolean =
+        scan(file, repairTruncatedTail = true).repairedTruncatedTail
 
     override fun writeBytesAtomically(file: File, content: ByteArray) {
         ensureParent(file)
@@ -249,17 +253,41 @@ class EncryptedSessionArtifactStore(
         }
     }
 
-    private fun scan(file: File): ScanResult {
+    private fun scan(
+        file: File,
+        repairTruncatedTail: Boolean = false,
+    ): ScanResult {
         var size = 0L
         var frames = 0
-        openInput(file).use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                size += read
+        var encryptedInput: EncryptedFrameInputStream? = null
+        try {
+            openInput(file).use { input ->
+                val frameInput = input as EncryptedFrameInputStream
+                encryptedInput = frameInput
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    size += read
+                }
+                frames = frameInput.framesRead
             }
-            frames = (input as EncryptedFrameInputStream).framesRead
+        } catch (failure: SecurityException) {
+            val recoverableInput = encryptedInput
+            if (
+                !repairTruncatedTail ||
+                failure.message != "ARTIFACT_FRAME_TRUNCATED" ||
+                recoverableInput == null
+            ) {
+                throw failure
+            }
+            frames = recoverableInput.framesRead
+            RandomAccessFile(file, "rw").use { randomAccess ->
+                randomAccess.setLength(recoverableInput.ciphertextBytesConsumed)
+                randomAccess.fd.sync()
+            }
+            restrictToOwner(file)
+            return ScanResult(size, frames, repairedTruncatedTail = true)
         }
         return ScanResult(size, frames)
     }
@@ -504,6 +532,9 @@ class EncryptedSessionArtifactStore(
         val framesRead: Int
             get() = sequence
 
+        var ciphertextBytesConsumed: Long = HEADER_BYTES.toLong()
+            private set
+
         override fun read(): Int {
             if (!ensureFrame()) return -1
             return frame[offset++].toInt() and 0xff
@@ -538,6 +569,8 @@ class EncryptedSessionArtifactStore(
             if (offset < frame.size) return true
             frame.fill(0)
             frame = decryptFrame(dataInput, header, sequence) ?: return false
+            ciphertextBytesConsumed +=
+                Int.SIZE_BYTES + GCM_IV_BYTES + frame.size + GCM_TAG_BYTES
             sequence += 1
             offset = 0
             return true
@@ -547,6 +580,7 @@ class EncryptedSessionArtifactStore(
     private data class ScanResult(
         val plaintextSize: Long,
         val frameCount: Int,
+        val repairedTruncatedTail: Boolean = false,
     )
 
     companion object {

@@ -25,6 +25,13 @@ interface SessionArtifactStore {
 
     fun openAppend(file: File): ArtifactAppendSink
 
+    /**
+     * Removes only an incomplete trailing append frame, if present.
+     *
+     * Authentication failures and malformed complete frames must still fail closed.
+     */
+    fun recoverAppend(file: File): Boolean = false
+
     fun plaintextSize(file: File): Long
 
     fun writeBytesAtomically(file: File, content: ByteArray)

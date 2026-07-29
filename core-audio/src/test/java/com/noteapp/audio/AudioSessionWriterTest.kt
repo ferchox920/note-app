@@ -11,6 +11,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import javax.crypto.spec.SecretKeySpec
 
@@ -199,5 +200,46 @@ class AudioSessionWriterTest {
         )
         assertEquals(64_000L, recovered.totalBytes)
         assertEquals(64_000L, artifactStore.plaintextSize(segment))
+    }
+
+    @Test
+    fun `encrypted recovery adopts authenticated prefix after interrupted final frame`() {
+        val artifactStore = EncryptedSessionArtifactStore(
+            root,
+            SecretKeySpec(ByteArray(32) { (it + 19).toByte() }, "AES"),
+        )
+        val format = PcmFormat(16_000)
+        val writer = AudioSessionWriter(
+            rootDirectory = root,
+            sessionId = "encrypted-crash-session",
+            format = format,
+            artifactStore = artifactStore,
+        )
+        val retained = ByteArray(3_200) { (it % 173).toByte() }
+        val interrupted = ByteArray(3_200) { (it % 149).toByte() }
+        writer.openSegment().apply {
+            write(retained, 0, retained.size)
+            write(interrupted, 0, interrupted.size)
+        }
+        writer.writeCheckpoint(SessionStatus.RECORDING)
+        writer.closeSegment()
+        val segment = writer.sessionDirectory.resolve("segment-0000.pcm")
+        RandomAccessFile(segment, "rw").use { randomAccess ->
+            randomAccess.setLength(randomAccess.length() - 9)
+        }
+
+        val recovered = AudioSessionWriter.recover(
+            rootDirectory = root,
+            sessionId = "encrypted-crash-session",
+            expectedFormat = format,
+            artifactStore = artifactStore,
+        )
+
+        assertEquals(retained.size.toLong(), recovered.totalBytes)
+        assertEquals(1, recovered.completedSegments.size)
+        assertEquals(
+            "f21a4ebabade404b8c0d2abceab8945b55df224e282aefdcf743fa0913c67920",
+            recovered.completedSegments.single().sha256,
+        )
     }
 }

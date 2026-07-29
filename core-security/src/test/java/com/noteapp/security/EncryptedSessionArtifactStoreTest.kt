@@ -1,6 +1,7 @@
 package com.noteapp.security
 
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import javax.crypto.spec.SecretKeySpec
 import org.junit.Assert.assertArrayEquals
@@ -64,6 +65,9 @@ class EncryptedSessionArtifactStoreTest {
 
         assertThrows(SecurityException::class.java) {
             store.readBytes(original)
+        }
+        assertThrows(SecurityException::class.java) {
+            store.recoverAppend(original)
         }
 
         val source = root.resolve("session-1/vad-segments.json")
@@ -158,6 +162,27 @@ class EncryptedSessionArtifactStoreTest {
         assertTrue(store.isEncrypted(target))
         assertEquals("recoverable-plaintext", store.readText(target))
         assertFalse(File(target.path + ".plaintext.backup").exists())
+    }
+
+    @Test
+    fun `append recovery discards only an incomplete final frame`() {
+        val file = root.resolve("session-1/segment-0000.pcm")
+        val retained = ByteArray(3_200) { (it % 193).toByte() }
+        val interrupted = ByteArray(3_200) { (it % 157).toByte() }
+        store.openAppend(file).use { sink ->
+            sink.write(retained)
+            sink.write(interrupted)
+        }
+        RandomAccessFile(file, "rw").use { randomAccess ->
+            randomAccess.setLength(randomAccess.length() - 7)
+        }
+
+        assertThrows(SecurityException::class.java) {
+            store.readBytes(file)
+        }
+        assertTrue(store.recoverAppend(file))
+        assertArrayEquals(retained, store.readBytes(file))
+        assertFalse(store.recoverAppend(file))
     }
 
     private fun ByteArray.containsSubsequence(candidate: ByteArray): Boolean =
