@@ -211,6 +211,11 @@ las pausas menores a 1 s; falta repetir el benchmark físico antes de elegir
 tiny/base o evaluar G2. Evidencia:
 [`doc/evidence/sprint-3/incremental-optimization-2026-07-28.md`](doc/evidence/sprint-3/incremental-optimization-2026-07-28.md).
 
+La medición coalescida redujo finales de 23 a 4, eliminó el overflow y mejoró el
+RTF de 1,896 a 1,468, pero la latencia parcial p95 subió a 11,447 s. La siguiente
+iteración usa decodificación incremental sin timestamps internos ni fallbacks de
+temperatura, con límite proporcional de tokens; sigue pendiente su medición física.
+
 **Backlog prioritario**
 
 - P0. Implementar ring buffer PCM y ventanas de trabajo.

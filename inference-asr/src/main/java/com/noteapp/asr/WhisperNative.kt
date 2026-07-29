@@ -12,6 +12,7 @@ internal object WhisperNative {
         audio: FloatArray,
         threadCount: Int,
         language: String,
+        lowLatency: Boolean,
     ): Int
     external fun nativeSegmentCount(pointer: Long): Int
     external fun nativeSegmentText(pointer: Long, index: Int): String
@@ -21,4 +22,3 @@ internal object WhisperNative {
     external fun nativeTimings(pointer: Long): FloatArray
     external fun nativeSystemInfo(): String
 }
-

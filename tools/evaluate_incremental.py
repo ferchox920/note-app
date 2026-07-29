@@ -136,7 +136,9 @@ def main() -> int:
     candidates = sorted(args.results_dir.rglob("*.json"))
     rows: list[dict[str, object]] = []
     for path in candidates:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # PowerShell-generated verification manifests may include an UTF-8 BOM.
+        # utf-8-sig accepts both forms and keeps the recursive evidence scan portable.
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         if "inferenceMetrics" in data:
             rows.append(summarize_session(data, str(path)))
     if not rows:

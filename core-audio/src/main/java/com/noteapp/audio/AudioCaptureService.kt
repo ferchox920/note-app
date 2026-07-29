@@ -262,7 +262,12 @@ class AudioCaptureService : Service() {
         val coordinator = IncrementalAsrCoordinator(
             scope = serviceScope,
             transcriber = IncrementalPcmTranscriber { pcm16, offsetMs ->
-                val result = engine.transcribePcm16(pcm16, offsetMs, language = "es")
+                val result = engine.transcribePcm16(
+                    pcm = pcm16,
+                    offsetMs = offsetMs,
+                    language = "es",
+                    lowLatency = true,
+                )
                 IncrementalInferenceResult(
                     text = result.segments.joinToString(" ") { it.text.trim() }.trim(),
                     inferenceDurationMs = result.inferenceDurationMs,

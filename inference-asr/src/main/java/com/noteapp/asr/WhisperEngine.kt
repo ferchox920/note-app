@@ -45,6 +45,7 @@ class WhisperEngine private constructor(
         pcm: ByteArray,
         offsetMs: Long = 0,
         language: String = "es",
+        lowLatency: Boolean = false,
     ): WhisperTranscription = withContext(dispatcher) {
         check(pointer != 0L) { "Whisper engine is released" }
         val samples = Pcm16Decoder.littleEndianToFloat(pcm)
@@ -55,6 +56,7 @@ class WhisperEngine private constructor(
             audio = samples,
             threadCount = threadCount,
             language = language,
+            lowLatency = lowLatency,
         )
         val inferenceDurationMs = (System.nanoTime() - started) / 1_000_000L
         check(result == 0) { "whisper_full failed with code $result" }

@@ -76,7 +76,8 @@ Java_com_noteapp_asr_WhisperNative_nativeTranscribe(
     jlong pointer,
     jfloatArray audio,
     jint thread_count,
-    jstring language
+    jstring language,
+    jboolean low_latency
 ) {
     whisper_context * context = context_from(pointer);
     if (context == nullptr) {
@@ -93,8 +94,8 @@ Java_com_noteapp_asr_WhisperNative_nativeTranscribe(
     params.n_threads = std::max(1, static_cast<int>(thread_count));
     params.translate = false;
     params.no_context = true;
-    params.no_timestamps = false;
-    params.single_segment = false;
+    params.no_timestamps = low_latency;
+    params.single_segment = low_latency;
     params.print_special = false;
     params.print_progress = false;
     params.print_realtime = false;
@@ -104,6 +105,18 @@ Java_com_noteapp_asr_WhisperNative_nativeTranscribe(
     params.suppress_blank = true;
     params.suppress_nst = true;
     params.temperature = 0.0f;
+    if (low_latency) {
+        // Incremental windows already receive authoritative PCM timestamps from
+        // Kotlin. Avoid timestamp-token decoding and expensive temperature
+        // fallbacks, then cap runaway hallucinations on short/noisy windows.
+        params.temperature_inc = 0.0f;
+        params.max_tokens = std::clamp(
+            static_cast<int>((sample_count * 8LL + WHISPER_SAMPLE_RATE - 1) /
+                             WHISPER_SAMPLE_RATE),
+            16,
+            32
+        );
+    }
     // Whisper defaults to the model's full 30 s encoder context even for the
     // short 5–8 s chunks used by the mobile pipeline. Limit the graph to the
     // actual mel-frame requirement (one encoder position per 20 ms) so short

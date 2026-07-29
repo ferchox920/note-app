@@ -97,6 +97,34 @@ la evidencia VAD original mientras se evita invocar Whisper por pausas breves.
 Whisper por inferencia para separar coste de encoder, decoder y muestreo. La
 reutilización de una ventana marca esos tiempos en cero.
 
+La sesión `b55ee116-548c-4472-9659-23e49050e843` midió 105.300 ms con captura
+perfecta. Frente al baseline:
+
+- finales: 23 → 4;
+- overflow final: presente → ausente;
+- RTF corregido: 1,896 → 1,468;
+- inferencia total: 132.992 → 114.831 ms;
+- primer texto: 8.103 → 8.433 ms;
+- latencia parcial p95: 8.162 → 11.447 ms;
+- descartes parciales: 21 → 14;
+- conflictos de prefijo estable: 0 → 11.
+
+La coalescencia resolvió la presión de finales y mejoró 22,6 % el RTF, pero no
+alcanzó G2: el worker continuó acumulando parciales y la calidad visible siguió
+siendo insuficiente.
+
+La telemetría mostró que `encodeMs` se mantiene aproximadamente entre
+60 y 90 ms, mientras la generación de tokens domina los 4–7 s de pared. Por eso
+el modo incremental pasa a decodificar una sola hipótesis sin tokens de timestamp,
+deshabilita los fallbacks de temperatura y limita la salida a 8 tokens por segundo
+de audio (mínimo 16, máximo 32). Los timestamps de producto no cambian: proceden
+del timeline PCM del coordinador. El modo offline conserva la decodificación
+completa para refinamiento y métricas.
+
+El evaluador acepta tanto JSON UTF-8 como manifiestos UTF-8 con BOM generados por
+Windows PowerShell; una prueba CLI evita que la recolección verificada vuelva a
+bloquear el reporte.
+
 ## Siguiente medición física
 
 1. Compilar e instalar la APK benchmark exacta.

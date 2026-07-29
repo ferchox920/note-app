@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -95,6 +98,51 @@ class EvaluateIncrementalTest(unittest.TestCase):
         self.assertEqual(7_000, aggregate["worstSessionVisibleLatencyP95Ms"])
         self.assertEqual(1.2, aggregate["worstSessionWeightedRealTimeFactor"])
         self.assertFalse(aggregate["allEligibleForManualG2Review"])
+
+    def test_cli_accepts_bom_in_verification_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            results = root / "results"
+            output = root / "output"
+            results.mkdir()
+            (results / "verification.json").write_text(
+                json.dumps({"verified": True}), encoding="utf-8-sig"
+            )
+            (results / "incremental-transcript.json").write_text(
+                json.dumps({
+                    "modelId": "tiny",
+                    "capturePipelineId": "direct-16k",
+                    "timeToFirstTextMs": 1_000,
+                    "errorCode": None,
+                    "inferenceMetrics": [{
+                        "final": False,
+                        "windowStartMs": 0,
+                        "windowEndMs": 4_000,
+                        "audioDurationMs": 4_000,
+                        "inferenceDurationMs": 2_000,
+                        "visibleLatencyMs": 2_000,
+                    }],
+                }),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(MODULE_PATH),
+                    "--results-dir",
+                    str(results),
+                    "--output-dir",
+                    str(output),
+                    "--consent-confirmed",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertTrue((output / "incremental-evaluation.json").is_file())
 
 
 if __name__ == "__main__":
