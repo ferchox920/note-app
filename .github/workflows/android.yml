@@ -29,6 +29,23 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
       - name: Verify
-        run: ./gradlew build lint test --stacktrace
+        shell: bash
+        run: |
+          set +e
+          ./gradlew build lint test --stacktrace 2>&1 | tee gradle-build.log
+          gradle_status=${PIPESTATUS[0]}
+          if [ "$gradle_status" -ne 0 ]; then
+            python - <<'PY'
+          from pathlib import Path
+
+          tail = "\n".join(
+              Path("gradle-build.log").read_text(encoding="utf-8", errors="replace")
+              .splitlines()[-40:]
+          )
+          escaped = tail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Gradle verification failed::{escaped}")
+          PY
+          fi
+          exit "$gradle_status"
       - name: Verify evidence and evaluation tools
         run: python -m unittest discover -s tools/tests -v
