@@ -17,9 +17,19 @@ aggregate_sessions = MODULE.aggregate_sessions
 covered_audio_duration_ms = MODULE.covered_audio_duration_ms
 percentile = MODULE.percentile
 summarize_session = MODULE.summarize_session
+word_error_rate = MODULE.word_error_rate
 
 
 class EvaluateIncrementalTest(unittest.TestCase):
+    def test_word_error_rate_normalizes_case_accents_and_punctuation(self):
+        self.assertEqual(
+            0.25,
+            word_error_rate(
+                "Hola, ¿cómo estás hoy?",
+                "hola cómo estás mañana",
+            ),
+        )
+
     def test_percentile_interpolates_sorted_values(self):
         self.assertEqual(25.0, percentile([40, 10, 20, 30], 0.50))
         self.assertEqual(38.5, percentile([40, 10, 20, 30], 0.95))
@@ -125,6 +135,8 @@ class EvaluateIncrementalTest(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
+            reference = root / "reference.txt"
+            reference.write_text("texto de referencia", encoding="utf-8")
 
             completed = subprocess.run(
                 [
@@ -135,6 +147,8 @@ class EvaluateIncrementalTest(unittest.TestCase):
                     "--output-dir",
                     str(output),
                     "--consent-confirmed",
+                    "--reference-text",
+                    str(reference),
                 ],
                 capture_output=True,
                 text=True,

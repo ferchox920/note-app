@@ -214,7 +214,10 @@ tiny/base o evaluar G2. Evidencia:
 La medición coalescida redujo finales de 23 a 4, eliminó el overflow y mejoró el
 RTF de 1,896 a 1,468, pero la latencia parcial p95 subió a 11,447 s. La siguiente
 iteración usa decodificación incremental sin timestamps internos ni fallbacks de
-temperatura, con límite proporcional de tokens; sigue pendiente su medición física.
+temperatura, con límite proporcional de tokens. Su medición física alcanzó primer
+texto en 3,573 s, latencia p95 de 149 ms y RTF 0,044, pero fue rechazada manualmente
+por loops sobre audio ambiente. Se añadió supresión conservadora de repetición y
+una lectura controlada con WER; sigue pendiente ejecutar esa prueba de calidad.
 
 **Backlog prioritario**
 

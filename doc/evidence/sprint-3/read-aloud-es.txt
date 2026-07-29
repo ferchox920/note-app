@@ -1,0 +1,7 @@
+Esta prueba evalúa una aplicación de notas que transcribe voz directamente en el teléfono. El audio y el texto permanecen en el dispositivo, sin enviarse a servicios externos. Durante la grabación hablaré con un ritmo natural, mantendré el teléfono cerca y haré pausas breves entre algunas frases.
+
+Primero quiero registrar tres datos concretos. La reunión comienza a las nueve y treinta. Debemos revisar el presupuesto del mes de agosto. También necesitamos enviar el informe antes del viernes. Después comprobaremos si la aplicación conserva correctamente los nombres, los números y los signos de puntuación.
+
+Ahora describiré una situación cotidiana. Cuando termina una conversación, quiero encontrar rápidamente los acuerdos importantes, añadir una nota personal y volver al momento exacto donde se tomó cada decisión. Una transcripción útil no necesita ser perfecta, pero debe evitar repeticiones, palabras inventadas y cambios inesperados en frases que ya parecían confirmadas.
+
+Finalmente leeré una lista corta: café, cuaderno, teléfono, ventana y bicicleta. Los números son siete, dieciocho, cuarenta y dos, y doscientos veinticinco. Con esta última oración termina la prueba controlada de reconocimiento en español.

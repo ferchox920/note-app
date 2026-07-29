@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -48,7 +49,33 @@ def covered_audio_duration_ms(metrics: list[dict]) -> int:
     return covered + current_end - current_start
 
 
-def summarize_session(data: dict, source: str = "") -> dict[str, object]:
+def normalized_words(text: str) -> list[str]:
+    return re.findall(r"[^\W_]+", text.lower(), flags=re.UNICODE)
+
+
+def word_error_rate(reference: str, hypothesis: str) -> float | None:
+    expected = normalized_words(reference)
+    actual = normalized_words(hypothesis)
+    if not expected:
+        return None
+    previous = list(range(len(actual) + 1))
+    for row, expected_word in enumerate(expected, start=1):
+        current = [row]
+        for column, actual_word in enumerate(actual, start=1):
+            current.append(min(
+                current[-1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (expected_word != actual_word),
+            ))
+        previous = current
+    return previous[-1] / len(expected)
+
+
+def summarize_session(
+    data: dict,
+    source: str = "",
+    reference_text: str | None = None,
+) -> dict[str, object]:
     metrics = data.get("inferenceMetrics", [])
     if not metrics:
         raise ValueError(f"No incremental inference metrics in {source or 'input'}")
@@ -76,6 +103,7 @@ def summarize_session(data: dict, source: str = "") -> dict[str, object]:
         )
         for name in ("sampleMs", "encodeMs", "decodeMs", "batchMs", "promptMs")
     }
+    wer = word_error_rate(reference_text, data.get("stableText", "")) if reference_text else None
     return {
         "source": source,
         "modelId": data["modelId"],
@@ -99,6 +127,7 @@ def summarize_session(data: dict, source: str = "") -> dict[str, object]:
         "errorCode": error_code,
         "automaticThresholds": automatic_thresholds,
         "eligibleForManualG2Review": all(automatic_thresholds.values()),
+        "wordErrorRate": wer,
     }
 
 
@@ -111,6 +140,11 @@ def aggregate_sessions(rows: list[dict[str, object]]) -> dict[str, dict[str, obj
     for (model, pipeline), selected in sorted(grouped.items()):
         first_text = [float(row["timeToFirstTextMs"]) for row in selected if row["timeToFirstTextMs"] is not None]
         visible_p95 = [float(row["visibleLatencyP95Ms"]) for row in selected if row["visibleLatencyP95Ms"] is not None]
+        word_error_rates = [
+            float(row["wordErrorRate"])
+            for row in selected
+            if row.get("wordErrorRate") is not None
+        ]
         result[f"{model}|{pipeline}"] = {
             "modelId": model,
             "capturePipelineId": pipeline,
@@ -122,6 +156,7 @@ def aggregate_sessions(rows: list[dict[str, object]]) -> dict[str, dict[str, obj
             "droppedPartialCount": sum(int(row["droppedPartialCount"]) for row in selected),
             "stableConflictCount": sum(int(row["stableConflictCount"]) for row in selected),
             "allEligibleForManualG2Review": all(bool(row["eligibleForManualG2Review"]) for row in selected),
+            "worstSessionWordErrorRate": max(word_error_rates) if word_error_rates else None,
         }
     return result
 
@@ -131,7 +166,13 @@ def main() -> int:
     parser.add_argument("--results-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--consent-confirmed", required=True, action="store_true")
+    parser.add_argument("--reference-text", type=Path)
     args = parser.parse_args()
+    reference_text = (
+        args.reference_text.read_text(encoding="utf-8-sig")
+        if args.reference_text is not None
+        else None
+    )
 
     candidates = sorted(args.results_dir.rglob("*.json"))
     rows: list[dict[str, object]] = []
@@ -140,7 +181,7 @@ def main() -> int:
         # utf-8-sig accepts both forms and keeps the recursive evidence scan portable.
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         if "inferenceMetrics" in data:
-            rows.append(summarize_session(data, str(path)))
+            rows.append(summarize_session(data, str(path), reference_text))
     if not rows:
         raise FileNotFoundError("No incremental transcript result JSON files found")
 

@@ -125,12 +125,33 @@ El evaluador acepta tanto JSON UTF-8 como manifiestos UTF-8 con BOM generados po
 Windows PowerShell; una prueba CLI evita que la recolección verificada vuelva a
 bloquear el reporte.
 
-## Siguiente medición física
+## Tercera medición: modo de baja latencia
+
+La sesión `b3f5e5ab-de97-46b2-8627-2f9422624708` completó 105.960 ms con captura
+perfecta y produjo:
+
+- primer texto en 3.573 ms;
+- latencia parcial p50 123 ms y p95 148,6 ms;
+- inferencia p50 121 ms y p95 147,3 ms;
+- RTF corregido 0,0436;
+- cero descartes, cero errores técnicos y 10 conflictos de estabilización.
+
+Los umbrales automáticos quedaron verdes, pero la revisión manual rechazó la
+muestra por loops y palabras inventadas. La transcripción offline completa del
+mismo audio también repitió frases, por lo que el audio ambiente no constituye
+un corpus válido para decidir precisión. G2 continúa pendiente.
+
+Antes de mostrar una hipótesis, el pipeline ahora detecta loops consecutivos de
+palabras o frases y suprime los casos dominados por repetición. No intenta
+"corregir" palabras: solamente evita estabilizar una salida técnicamente rápida
+pero evidentemente degenerada.
+
+## Siguiente medición física controlada
 
 1. Compilar e instalar la APK benchmark exacta.
-2. Ejecutar otra sesión corta comparable con tiny y habla autorizada.
-3. Verificar primer texto, latencia p50/p95, RTF corregido, descartes, conflictos y
-   `reusedResultCount`.
+2. Leer exactamente [`read-aloud-es.txt`](read-aloud-es.txt).
+3. Verificar primer texto, latencia p50/p95, RTF corregido, descartes, conflictos,
+   `reusedResultCount` y WER con `--reference-text`.
 4. Solo después elegir tiny o base para la prueba sostenida de 45 minutos.
 
 No se declara G2 aprobada con pruebas unitarias ni con el benchmark offline de G0.

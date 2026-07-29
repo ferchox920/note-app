@@ -56,19 +56,23 @@ JSON autorizados a un directorio privado, generar percentiles con:
 python .\tools\evaluate_incremental.py `
   --results-dir .\artifacts\private\incremental-sessions `
   --output-dir .\artifacts\private\incremental-evaluation `
+  --reference-text .\doc\evidence\sprint-3\read-aloud-es.txt `
   --consent-confirmed
 ```
 
 La salida `incremental-evaluation.json`/CSV agrupa por modelo y pipeline, informa
-p50/p95, peor sesión, descartes y conflictos. `eligibleForManualG2Review` significa
+p50/p95, peor sesión, descartes, conflictos y WER cuando existe referencia.
+`eligibleForManualG2Review` significa
 solamente que supera umbrales automáticos; nunca aprueba G2 sin revisar estabilidad
 de captura y duplicaciones.
 
 ## Prueba en dispositivo para G2
 
 1. Cerrar primero G0 y G1 en S25 Ultra; repetir luego en S25+.
-2. Grabar una sesión autorizada de 45 minutos con pantalla apagada y combinación de
-   habla, pausas y ruido del entorno objetivo.
+2. Ejecutar primero la lectura controlada
+   [`read-aloud-es.txt`](read-aloud-es.txt); después grabar una sesión autorizada
+   de 45 minutos con pantalla apagada y combinación de habla, pausas y ruido del
+   entorno objetivo.
 3. Archivar por hipótesis: inicio/fin de audio, inicio/fin de inferencia, modelo,
    ventana, longitud de cola y descartes acumulados.
 4. Calcular tiempo a primer parcial y latencia visible p50/p95.

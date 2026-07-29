@@ -22,6 +22,7 @@ import android.util.Log
 import com.noteapp.asr.IncrementalAsrCoordinator
 import com.noteapp.asr.IncrementalAsrState
 import com.noteapp.asr.IncrementalInferenceResult
+import com.noteapp.asr.IncrementalTranscriptSanitizer
 import com.noteapp.asr.IncrementalPcmTranscriber
 import com.noteapp.asr.IncrementalTranscriptStore
 import com.noteapp.asr.WhisperEngine
@@ -269,7 +270,9 @@ class AudioCaptureService : Service() {
                     lowLatency = true,
                 )
                 IncrementalInferenceResult(
-                    text = result.segments.joinToString(" ") { it.text.trim() }.trim(),
+                    text = IncrementalTranscriptSanitizer.sanitize(
+                        result.segments.joinToString(" ") { it.text.trim() }.trim(),
+                    ),
                     inferenceDurationMs = result.inferenceDurationMs,
                     realTimeFactor = result.realTimeFactor,
                     nativeTimings = result.nativeTimings,
