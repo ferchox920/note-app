@@ -325,12 +325,15 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
   validados en S25 Ultra sin grabar ni retranscribir. Véase
   [`doc/evidence/sprint-4/sqlcipher-keystore-2026-07-29.md`](doc/evidence/sprint-4/sqlcipher-keystore-2026-07-29.md).
 - P0. Cifrar archivos de audio y artefactos sensibles en reposo.
-  **Implementación y CI completadas; validación física pendiente (2026-07-29):**
-  AES-256-GCM por frames con clave no exportable de Android Keystore, migración
-  idempotente, binding de ruta, escrituras atómicas y recuperación segura de un
-  tail append-only incompleto. El P0 no se cierra hasta migrar y auditar las
-  sesiones existentes en S25 Ultra con
-  [`doc/evidence/sprint-4/encrypted-session-artifacts-protocol.md`](doc/evidence/sprint-4/encrypted-session-artifacts-protocol.md).
+  **Completado (2026-07-31):** AES-256-GCM por frames con clave no exportable de
+  Android Keystore, IV generado por el proveedor seguro, migración idempotente,
+  binding de ruta, escrituras atómicas y recuperación segura de un tail
+  append-only incompleto. En S25 Ultra se autenticaron dos veces 14 sesiones,
+  114 artefactos y 24 segmentos PCM; no quedaron archivos planos ni temporales,
+  no se borraron datos y no se inició grabación o ASR. Véase
+  [`doc/evidence/sprint-4/encrypted-session-artifacts-2026-07-31.md`](doc/evidence/sprint-4/encrypted-session-artifacts-2026-07-31.md)
+  y el
+  [`protocolo reproducible`](doc/evidence/sprint-4/encrypted-session-artifacts-protocol.md).
 - P0. Implementar recuperación idempotente tras cierre forzado o reinicio.
 - P0. Implementar escrituras atómicas, checksums y limpieza controlada de temporales.
 - P0. Añadir BiometricPrompt opcional para reautenticación.
