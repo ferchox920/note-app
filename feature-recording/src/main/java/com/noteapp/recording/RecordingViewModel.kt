@@ -277,7 +277,6 @@ class RecordingViewModel @Inject constructor(
                 error = null,
             )
             val jobId = runCatching {
-                ensureCompletedSessionIndexed(sessionId)
                 processingTelemetryStore.start(sessionId, WHISPER_ASR_JOB)
             }.getOrElse { failure ->
                 asrState.value = asrState.value.copy(
@@ -323,7 +322,6 @@ class RecordingViewModel @Inject constructor(
                 error = null,
             )
             val jobId = runCatching {
-                ensureCompletedSessionIndexed(sessionId)
                 processingTelemetryStore.start(sessionId, SHERPA_REPLAY_JOB)
             }.getOrElse { failure ->
                 asrState.value = asrState.value.copy(
@@ -354,12 +352,6 @@ class RecordingViewModel @Inject constructor(
                     error = failure.message ?: "STREAMING_ASR_FAILED",
                 )
             }
-        }
-    }
-
-    private suspend fun ensureCompletedSessionIndexed(sessionId: String) {
-        check(checkpointStore.findCompleted().any { session -> session.id == sessionId }) {
-            "SESSION_NOT_COMPLETED"
         }
     }
 

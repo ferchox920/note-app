@@ -26,6 +26,7 @@ class RoomProcessingTelemetryStore(
     private val database: NoteAppDatabase,
     private val nowEpochMs: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
+    private val ensureSessionIndexed: suspend (String) -> Unit = {},
 ) : ProcessingTelemetryStore {
     override suspend fun recoverInterrupted(): Int =
         database.processingJobDao().failAllRunning(
@@ -37,7 +38,11 @@ class RoomProcessingTelemetryStore(
 
     override suspend fun start(sessionId: String, jobType: String): String {
         require(jobType.matches(SAFE_CODE)) { "INVALID_JOB_TYPE" }
-        checkNotNull(database.sessionDao().findById(sessionId)) {
+        val indexedSession = database.sessionDao().findById(sessionId) ?: run {
+            ensureSessionIndexed(sessionId)
+            database.sessionDao().findById(sessionId)
+        }
+        checkNotNull(indexedSession) {
             "SESSION_NOT_INDEXED"
         }
         val jobId = newId()

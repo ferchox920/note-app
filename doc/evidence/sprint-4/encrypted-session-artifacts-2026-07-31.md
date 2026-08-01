@@ -45,11 +45,17 @@ excluido de Git.
 
 ## Relación con `SESSION_NOT_INDEXED`
 
-El flujo ASR ahora fuerza el refresco idempotente del índice Room antes de crear
-un trabajo (`e5b3c48`). Tras corregir la inicialización Keystore, la app volvió a
-abrir normalmente sobre las 14 sesiones cifradas y ejecutó ese refresco sin
-iniciar una transcripción. Así se elimina la condición que producía
-`SESSION_NOT_INDEXED` al intentar usar una sesión completada aún no indexada.
+El cambio `e5b3c48` añadió un refresco idempotente del índice Room antes de crear
+un trabajo ASR. Tras corregir la inicialización Keystore, la app volvió a abrir
+normalmente sobre las 14 sesiones cifradas y ejecutó ese refresco sin iniciar
+una transcripción.
+
+Una prueba de uso posterior volvió a mostrar `SESSION_NOT_INDEXED`. El refresco
+estaba en la pantalla, pero no era una garantía del límite que persiste el
+trabajo. La corrección posterior trasladó la autorreparación a
+`RoomProcessingTelemetryStore.start`: si la sesión falta, reconstruye el índice,
+vuelve a comprobarla y solo entonces crea el trabajo. La regresión se validó en
+el S25 Ultra con una base aislada, sin abrir el micrófono ni ejecutar ASR.
 
 ## Regresión
 

@@ -207,6 +207,32 @@ class NoteAppDatabaseTest {
     }
 
     @Test
+    fun processingTelemetryRepairsMissingSessionIndexBeforeStarting() = runBlocking {
+        var repairCount = 0
+        var nextJob = 0
+        val store = RoomProcessingTelemetryStore(
+            database = database,
+            nowEpochMs = { 100L },
+            newId = { "job-reindexed-${++nextJob}" },
+            ensureSessionIndexed = { sessionId ->
+                repairCount += 1
+                database.sessionDao().upsert(session(sessionId))
+            },
+        )
+
+        val jobId = store.start("session-reindexed", "WHISPER_ASR_POST_PROCESS")
+
+        assertEquals(1, repairCount)
+        assertEquals("job-reindexed-1", jobId)
+        assertEquals(
+            "session-reindexed",
+            database.processingJobDao().findById(jobId)?.sessionId,
+        )
+        store.start("session-reindexed", "WHISPER_ASR_POST_PROCESS")
+        assertEquals(1, repairCount)
+    }
+
+    @Test
     fun invalidMetricRollsBackWithoutFinishingJob() = runBlocking {
         database.sessionDao().upsert(session("session-1"))
         val store = RoomProcessingTelemetryStore(

@@ -75,7 +75,15 @@ object RecordingDependenciesModule {
     @Singleton
     fun provideProcessingTelemetryStore(
         database: NoteAppDatabase,
-    ): ProcessingTelemetryStore = RoomProcessingTelemetryStore(database)
+        checkpointStore: SessionCheckpointStore,
+    ): ProcessingTelemetryStore = RoomProcessingTelemetryStore(
+        database = database,
+        ensureSessionIndexed = { sessionId ->
+            check(checkpointStore.findCompleted().any { session -> session.id == sessionId }) {
+                "SESSION_NOT_COMPLETED"
+            }
+        },
+    )
 
     @Provides
     @Singleton
