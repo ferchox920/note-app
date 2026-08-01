@@ -15,6 +15,7 @@ import com.noteapp.storage.AppPreferences
 import com.noteapp.storage.AppPreferencesStore
 import com.noteapp.storage.ProcessingTelemetryStore
 import com.noteapp.storage.SessionDeletionStore
+import com.noteapp.storage.SessionRetentionStore
 import com.noteapp.security.SessionArtifactStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
@@ -35,6 +36,7 @@ import com.noteapp.asr.WhisperModelVerifier
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -98,6 +100,9 @@ data class RecordingUiState(
     val selectedIncrementalModelId: String? = null,
     val benchmarkThreadCount: Int = AppPreferences.DEFAULT_BENCHMARK_THREAD_COUNT,
     val benchmarkChunkSeconds: Int = AppPreferences.DEFAULT_BENCHMARK_CHUNK_SECONDS,
+    val retentionDays: Int = AppPreferences.RETENTION_FOREVER_DAYS,
+    val consentNoticeAcknowledged: Boolean = false,
+    val retentionDeletedCount: Int = 0,
 )
 
 @HiltViewModel
@@ -109,6 +114,7 @@ class RecordingViewModel @Inject constructor(
     private val appPreferencesStore: AppPreferencesStore,
     private val processingTelemetryStore: ProcessingTelemetryStore,
     private val sessionDeletionStore: SessionDeletionStore,
+    private val sessionRetentionStore: SessionRetentionStore,
     private val asrLabRunner: AsrLabRunner,
     private val sherpaStreamingLabRunner: SherpaStreamingLabRunner,
     private val vadComparisonRunner: VadComparisonRunner,
@@ -203,6 +209,11 @@ class RecordingViewModel @Inject constructor(
                 selectedIncrementalModelId = preferences.incrementalModelId,
                 benchmarkThreadCount = preferences.benchmarkThreadCount,
                 benchmarkChunkSeconds = preferences.benchmarkChunkSeconds,
+                retentionDays = preferences.retentionDays,
+                consentNoticeAcknowledged =
+                    preferences.consentNoticeVersionAcknowledged ==
+                    AppPreferences.CURRENT_CONSENT_NOTICE_VERSION,
+                retentionDeletedCount = asr.retentionDeletedCount,
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordingUiState())
@@ -230,6 +241,24 @@ class RecordingViewModel @Inject constructor(
         controller.start(pipeline, incrementalModelId)
     }
 
+    fun acknowledgeConsentAndStart(
+        pipeline: CapturePipeline,
+        incrementalModelId: String? = null,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                appPreferencesStore.acknowledgeConsentNotice(System.currentTimeMillis())
+                appPreferencesStore.setCapturePipeline(pipeline.id)
+            }.onSuccess {
+                controller.start(pipeline, incrementalModelId)
+            }.onFailure { failure ->
+                asrState.value = asrState.value.copy(
+                    error = failure.safeErrorCode("CONSENT_ACKNOWLEDGEMENT_SAVE_FAILED"),
+                )
+            }
+        }
+    }
+
     fun selectIncrementalModel(modelId: String?) {
         viewModelScope.launch {
             appPreferencesStore.setIncrementalModel(modelId)
@@ -245,6 +274,35 @@ class RecordingViewModel @Inject constructor(
     fun selectBenchmarkChunkSeconds(seconds: Int) {
         viewModelScope.launch {
             appPreferencesStore.setBenchmarkChunkSeconds(seconds)
+        }
+    }
+
+    fun setRetentionDays(days: Int) {
+        require(days in AppPreferences.SUPPORTED_RETENTION_DAYS) { "INVALID_RETENTION_DAYS" }
+        val initial = asrState.value
+        check(!initial.running) { "ASR_RUNNING_RETENTION_CHANGE_REFUSED" }
+        check(!initial.sessionDeletionRunning) { "SESSION_DELETE_ALREADY_RUNNING" }
+        asrState.value = initial.copy(
+            sessionDeletionRunning = true,
+            sessionDeletionError = null,
+            retentionDeletedCount = 0,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                appPreferencesStore.setRetentionDays(days)
+                val result = sessionRetentionStore.apply(days)
+                result to checkpointStore.findCompleted()
+            }.onSuccess { (result, sessions) ->
+                updateCompletedSessionsAfterDeletion(
+                    sessions = sessions,
+                    deletedCount = result.deletedSessionIds.size,
+                )
+            }.onFailure { failure ->
+                asrState.value = asrState.value.copy(
+                    sessionDeletionRunning = false,
+                    sessionDeletionError = failure.safeErrorCode("RETENTION_APPLY_FAILED"),
+                )
+            }
         }
     }
 
@@ -438,6 +496,32 @@ class RecordingViewModel @Inject constructor(
         }
     }
 
+    private fun updateCompletedSessionsAfterDeletion(
+        sessions: List<RecordingSession>,
+        deletedCount: Int,
+    ) {
+        val current = asrState.value
+        val nextSelected = current.selectedLabSessionId
+            ?.takeIf { selected -> sessions.any { session -> session.id == selected } }
+            ?: sessions.firstOrNull()?.id
+        val selectionChanged = nextSelected != current.selectedLabSessionId
+        asrState.value = current.copy(
+            completedSessions = sessions,
+            selectedLabSessionId = nextSelected,
+            selectedIncrementalTranscript = if (selectionChanged) null
+            else current.selectedIncrementalTranscript,
+            selectedIncrementalError = if (selectionChanged) null
+            else current.selectedIncrementalError,
+            result = if (selectionChanged) null else current.result,
+            streamingResult = if (selectionChanged) null else current.streamingResult,
+            error = if (selectionChanged) null else current.error,
+            sessionDeletionRunning = false,
+            sessionDeletionError = null,
+            retentionDeletedCount = deletedCount,
+        )
+        if (selectionChanged) nextSelected?.let(::loadIncrementalTranscript)
+    }
+
     private fun loadIncrementalTranscript(sessionId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val loaded = runCatching {
@@ -504,9 +588,26 @@ class RecordingViewModel @Inject constructor(
                 sessionArtifactStore.migrateAll()
                 processingTelemetryStore.recoverInterrupted()
                 val recoverable = checkpointStore.findRecoverable()
-                val sessions = checkpointStore.findCompleted()
-                recoverable to sessions
-            }.onSuccess { (recoverable, sessions) ->
+                val indexedSessions = checkpointStore.findCompleted()
+                val preferences = appPreferencesStore.preferences.first()
+                val retentionAttempt = runCatching {
+                    sessionRetentionStore.apply(preferences.retentionDays)
+                }
+                val sessions = if (retentionAttempt.getOrNull()?.deletedSessionIds?.isNotEmpty() == true) {
+                    checkpointStore.findCompleted()
+                } else {
+                    indexedSessions
+                }
+                PersistedStateInitialization(
+                    recoverableSessions = recoverable,
+                    completedSessions = sessions,
+                    retentionDeletedCount = retentionAttempt.getOrNull()?.deletedSessionIds?.size ?: 0,
+                    retentionError = retentionAttempt.exceptionOrNull()
+                        ?.safeErrorCode("RETENTION_APPLY_FAILED"),
+                )
+            }.onSuccess { initialization ->
+                val recoverable = initialization.recoverableSessions
+                val sessions = initialization.completedSessions
                 val selectedSessionId = asrState.value.selectedLabSessionId
                     ?.takeIf { selected -> sessions.any { it.id == selected } }
                     ?: sessions.firstOrNull()?.id
@@ -516,6 +617,8 @@ class RecordingViewModel @Inject constructor(
                     selectedLabSessionId = selectedSessionId,
                     selectedIncrementalTranscript = null,
                     selectedIncrementalError = null,
+                    sessionDeletionError = initialization.retentionError,
+                    retentionDeletedCount = initialization.retentionDeletedCount,
                 )
                 selectedSessionId?.let(::loadIncrementalTranscript)
             }.onFailure { failure ->
@@ -526,6 +629,13 @@ class RecordingViewModel @Inject constructor(
         }
     }
 
+    private data class PersistedStateInitialization(
+        val recoverableSessions: List<RecordingSession>,
+        val completedSessions: List<RecordingSession>,
+        val retentionDeletedCount: Int,
+        val retentionError: String?,
+    )
+
     private data class AsrUiState(
         val installedModelIds: Set<String> = emptySet(),
         val running: Boolean = false,
@@ -534,6 +644,7 @@ class RecordingViewModel @Inject constructor(
         val error: String? = null,
         val sessionDeletionRunning: Boolean = false,
         val sessionDeletionError: String? = null,
+        val retentionDeletedCount: Int = 0,
         val recoverableSessions: List<RecordingSession> = emptyList(),
         val completedSessions: List<RecordingSession> = emptyList(),
         val selectedLabSessionId: String? = null,

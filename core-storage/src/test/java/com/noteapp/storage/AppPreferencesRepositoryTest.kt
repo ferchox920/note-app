@@ -29,6 +29,8 @@ class AppPreferencesRepositoryTest {
         repository.setIncrementalModel("sherpa-es")
         repository.setBenchmarkThreadCount(6)
         repository.setBenchmarkChunkSeconds(20)
+        repository.setRetentionDays(90)
+        repository.acknowledgeConsentNotice(123_456L)
 
         assertEquals(
             AppPreferences(
@@ -36,6 +38,9 @@ class AppPreferencesRepositoryTest {
                 incrementalModelId = "sherpa-es",
                 benchmarkThreadCount = 6,
                 benchmarkChunkSeconds = 20,
+                retentionDays = 90,
+                consentNoticeVersionAcknowledged = 1,
+                consentAcknowledgedAtEpochMs = 123_456L,
             ),
             repository.preferences.first(),
         )
@@ -52,6 +57,12 @@ class AppPreferencesRepositoryTest {
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { repository.setBenchmarkThreadCount(3) }
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { repository.setRetentionDays(7) }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { repository.acknowledgeConsentNotice(0L) }
+        }
 
         assertEquals(4, repository.preferences.first().benchmarkThreadCount)
     }
@@ -65,6 +76,9 @@ class AppPreferencesRepositoryTest {
                 .setIncrementalModelId("invalid model id")
                 .setBenchmarkThreadCount(99)
                 .setBenchmarkChunkSeconds(7)
+                .setRetentionDays(7)
+                .setConsentNoticeVersion(99)
+                .setConsentAcknowledgedAtEpochMs(123L)
                 .build(),
         )
 

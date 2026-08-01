@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -170,6 +171,68 @@ class NoteAppDatabaseTest {
         assertEquals("ACTIVE_SESSION_DELETE_REFUSED", failure.message)
         assertTrue(sessionDirectory.isDirectory)
         assertEquals("RECORDING", database.sessionDao().findById("active-session")?.status)
+    }
+
+    @Test
+    fun retentionDeletesOnlyTerminalSessionsStrictlyOlderThanCutoff() = runBlocking {
+        val root = temporaryFolder.newFolder("retention-recordings")
+        val dayMs = 24L * 60L * 60L * 1_000L
+        val now = 400L * dayMs
+        listOf("expired", "boundary", "active").forEach { sessionId ->
+            root.resolve(sessionId).apply {
+                assertTrue(mkdir())
+                resolve("checkpoint.json").writeText("fixture")
+            }
+            insertSessionGraph(sessionId)
+        }
+        database.sessionDao().upsert(
+            session("expired").copy(endedAtEpochMs = now - 91L * dayMs),
+        )
+        database.sessionDao().upsert(
+            session("boundary").copy(endedAtEpochMs = now - 90L * dayMs),
+        )
+        database.sessionDao().upsert(
+            session("active").copy(
+                status = "RECORDING",
+                endedAtEpochMs = now - 120L * dayMs,
+            ),
+        )
+        val store = RoomSessionRetentionStore(
+            database = database,
+            deletionStore = RoomSessionDeletionStore(root, database),
+            nowEpochMs = { now },
+        )
+
+        val result = store.apply(90)
+
+        assertEquals(listOf("expired"), result.deletedSessionIds)
+        assertFalse(root.resolve("expired").exists())
+        assertSessionGraphDeleted("expired")
+        assertTrue(root.resolve("boundary").isDirectory)
+        assertTrue(root.resolve("active").isDirectory)
+        assertNotNull(database.sessionDao().findById("boundary"))
+        assertNotNull(database.sessionDao().findById("active"))
+    }
+
+    @Test
+    fun retentionForeverNeverDeletesSessions() = runBlocking {
+        val root = temporaryFolder.newFolder("retention-forever-recordings")
+        val directory = root.resolve("old-session").apply {
+            assertTrue(mkdir())
+            resolve("checkpoint.json").writeText("fixture")
+        }
+        database.sessionDao().upsert(
+            session("old-session").copy(endedAtEpochMs = 1L),
+        )
+        val store = RoomSessionRetentionStore(
+            database = database,
+            deletionStore = RoomSessionDeletionStore(root, database),
+            nowEpochMs = { 400L * 24L * 60L * 60L * 1_000L },
+        )
+
+        assertEquals(emptyList<String>(), store.apply(0).deletedSessionIds)
+        assertTrue(directory.isDirectory)
+        assertNotNull(database.sessionDao().findById("old-session"))
     }
 
     @Test

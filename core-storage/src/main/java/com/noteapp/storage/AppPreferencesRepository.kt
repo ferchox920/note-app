@@ -22,11 +22,17 @@ data class AppPreferences(
     val incrementalModelId: String? = null,
     val benchmarkThreadCount: Int = DEFAULT_BENCHMARK_THREAD_COUNT,
     val benchmarkChunkSeconds: Int = DEFAULT_BENCHMARK_CHUNK_SECONDS,
+    val retentionDays: Int = RETENTION_FOREVER_DAYS,
+    val consentNoticeVersionAcknowledged: Int = 0,
+    val consentAcknowledgedAtEpochMs: Long? = null,
 ) {
     companion object {
         const val DEFAULT_CAPTURE_PIPELINE_ID = "direct-16k"
         const val DEFAULT_BENCHMARK_THREAD_COUNT = 4
         const val DEFAULT_BENCHMARK_CHUNK_SECONDS = 30
+        const val RETENTION_FOREVER_DAYS = 0
+        const val CURRENT_CONSENT_NOTICE_VERSION = 1
+        val SUPPORTED_RETENTION_DAYS = setOf(RETENTION_FOREVER_DAYS, 30, 90, 365)
     }
 }
 
@@ -73,6 +79,10 @@ interface AppPreferencesStore {
     suspend fun setBenchmarkThreadCount(count: Int)
 
     suspend fun setBenchmarkChunkSeconds(seconds: Int)
+
+    suspend fun setRetentionDays(days: Int)
+
+    suspend fun acknowledgeConsentNotice(atEpochMs: Long)
 }
 
 internal class ProtoAppPreferencesRepository(
@@ -111,6 +121,23 @@ internal class ProtoAppPreferencesRepository(
         }
     }
 
+    override suspend fun setRetentionDays(days: Int) {
+        require(days in AppPreferences.SUPPORTED_RETENTION_DAYS) { "INVALID_RETENTION_DAYS" }
+        dataStore.updateData { current ->
+            current.toBuilder().setRetentionDays(days).build()
+        }
+    }
+
+    override suspend fun acknowledgeConsentNotice(atEpochMs: Long) {
+        require(atEpochMs > 0L) { "INVALID_CONSENT_TIMESTAMP" }
+        dataStore.updateData { current ->
+            current.toBuilder()
+                .setConsentNoticeVersion(AppPreferences.CURRENT_CONSENT_NOTICE_VERSION)
+                .setConsentAcknowledgedAtEpochMs(atEpochMs)
+                .build()
+        }
+    }
+
     private fun toAppPreferences(stored: StoredAppPreferences): AppPreferences =
         AppPreferences(
             capturePipelineId = stored.capturePipelineId
@@ -124,6 +151,20 @@ internal class ProtoAppPreferencesRepository(
             benchmarkChunkSeconds = stored.benchmarkChunkSeconds
                 .takeIf { it in BENCHMARK_CHUNK_SECONDS }
                 ?: AppPreferences.DEFAULT_BENCHMARK_CHUNK_SECONDS,
+            retentionDays = stored.retentionDays
+                .takeIf { it in AppPreferences.SUPPORTED_RETENTION_DAYS }
+                ?: AppPreferences.RETENTION_FOREVER_DAYS,
+            consentNoticeVersionAcknowledged = stored.consentNoticeVersion
+                .takeIf {
+                    it == AppPreferences.CURRENT_CONSENT_NOTICE_VERSION &&
+                        stored.consentAcknowledgedAtEpochMs > 0L
+                }
+                ?: 0,
+            consentAcknowledgedAtEpochMs = stored.consentAcknowledgedAtEpochMs
+                .takeIf {
+                    stored.consentNoticeVersion == AppPreferences.CURRENT_CONSENT_NOTICE_VERSION &&
+                        it > 0L
+                },
         )
 
     private companion object {

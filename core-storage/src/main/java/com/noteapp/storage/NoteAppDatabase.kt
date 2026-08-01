@@ -141,6 +141,20 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun findById(id: String): SessionEntity?
 
+    @Query(
+        """
+        SELECT * FROM sessions
+        WHERE status IN (:statuses)
+          AND endedAtEpochMs IS NOT NULL
+          AND endedAtEpochMs < :cutoffEpochMs
+        ORDER BY endedAtEpochMs ASC, id ASC
+        """,
+    )
+    suspend fun findTerminalEndedBefore(
+        statuses: List<String>,
+        cutoffEpochMs: Long,
+    ): List<SessionEntity>
+
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun deleteById(id: String)
 }

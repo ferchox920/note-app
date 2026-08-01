@@ -56,15 +56,24 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
     var pendingModel by remember { mutableStateOf<WhisperModelDescriptor?>(null) }
     var pendingCapturePipeline by remember { mutableStateOf(CapturePipeline.DIRECT_16_KHZ) }
     var pendingIncrementalModelId by remember { mutableStateOf<String?>(null) }
+    var pendingConsentAcknowledgement by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         if (result[Manifest.permission.RECORD_AUDIO] == true) {
             permissionDenied = false
-            viewModel.startRecording(pendingCapturePipeline, pendingIncrementalModelId)
+            if (pendingConsentAcknowledgement) {
+                viewModel.acknowledgeConsentAndStart(
+                    pendingCapturePipeline,
+                    pendingIncrementalModelId,
+                )
+            } else {
+                viewModel.startRecording(pendingCapturePipeline, pendingIncrementalModelId)
+            }
         } else {
             permissionDenied = true
         }
+        pendingConsentAcknowledgement = false
     }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         val descriptor = pendingModel
@@ -80,6 +89,7 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
         onStart = { pipeline, incrementalModelId ->
             pendingCapturePipeline = pipeline
             pendingIncrementalModelId = incrementalModelId
+            pendingConsentAcknowledgement = false
             if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 val permissions = buildList {
                     add(Manifest.permission.RECORD_AUDIO)
@@ -90,6 +100,23 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
                 permissionLauncher.launch(permissions.toTypedArray())
             } else {
                 viewModel.startRecording(pipeline, incrementalModelId)
+            }
+        },
+        onConsentAndStart = { pipeline, incrementalModelId ->
+            pendingCapturePipeline = pipeline
+            pendingIncrementalModelId = incrementalModelId
+            pendingConsentAcknowledgement = true
+            if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                val permissions = buildList {
+                    add(Manifest.permission.RECORD_AUDIO)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+                permissionLauncher.launch(permissions.toTypedArray())
+            } else {
+                pendingConsentAcknowledgement = false
+                viewModel.acknowledgeConsentAndStart(pipeline, incrementalModelId)
             }
         },
         onImportModel = { descriptor ->
@@ -112,6 +139,7 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
         onSelectBenchmarkThreadCount = viewModel::selectBenchmarkThreadCount,
         benchmarkChunkSeconds = state.benchmarkChunkSeconds,
         onSelectBenchmarkChunkSeconds = viewModel::selectBenchmarkChunkSeconds,
+        onSetRetentionDays = viewModel::setRetentionDays,
     )
 }
 
@@ -121,6 +149,7 @@ fun RecordingScreen(
     permissionDenied: Boolean,
     onIntent: (RecordingIntent) -> Unit,
     onStart: (CapturePipeline, String?) -> Unit,
+    onConsentAndStart: (CapturePipeline, String?) -> Unit,
     onImportModel: (WhisperModelDescriptor) -> Unit,
     onTranscribe: (WhisperModelDescriptor) -> Unit,
     onTranscribeStreaming: () -> Unit,
@@ -134,9 +163,15 @@ fun RecordingScreen(
     onSelectBenchmarkThreadCount: (Int) -> Unit,
     benchmarkChunkSeconds: Int,
     onSelectBenchmarkChunkSeconds: (Int) -> Unit,
+    onSetRetentionDays: (Int) -> Unit,
 ) {
     var confirmFinish by remember { mutableStateOf(false) }
     var pendingSessionDeletion by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingConsentStart by remember {
+        mutableStateOf<Pair<CapturePipeline, String?>?>(null)
+    }
+    var retentionMenuExpanded by remember { mutableStateOf(false) }
+    var pendingRetentionDays by remember { mutableStateOf<Int?>(null) }
     if (confirmFinish && state.status != SessionStatus.RECORDING && state.status != SessionStatus.PAUSED) {
         confirmFinish = false
     }
@@ -156,6 +191,64 @@ fun RecordingScreen(
             dismissButton = {
                 TextButton(onClick = { confirmFinish = false }) {
                     Text("Continuar grabando")
+                }
+            },
+        )
+    }
+    pendingConsentStart?.let { (pipeline, incrementalModelId) ->
+        AlertDialog(
+            onDismissRequest = { pendingConsentStart = null },
+            title = { Text("Autorización para grabar") },
+            text = {
+                Text(
+                    "Confirma que informaste a las personas participantes y que tienes " +
+                        "autorización para grabar. El audio y la transcripción se guardan " +
+                        "localmente y puedes configurar cuánto tiempo conservarlos.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.asrRunning && !state.sessionDeletionRunning,
+                    onClick = {
+                        pendingConsentStart = null
+                        onConsentAndStart(pipeline, incrementalModelId)
+                    },
+                ) {
+                    Text("Confirmo y comenzar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingConsentStart = null }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+    pendingRetentionDays?.let { days ->
+        AlertDialog(
+            onDismissRequest = { pendingRetentionDays = null },
+            title = { Text("¿Activar retención de $days días?") },
+            text = {
+                Text(
+                    "Las sesiones finalizadas con más de $days días se eliminarán " +
+                        "automáticamente, junto con audio, transcripción, notas, trabajos " +
+                        "y métricas. Esta acción no se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.asrRunning && !state.sessionDeletionRunning,
+                    onClick = {
+                        pendingRetentionDays = null
+                        onSetRetentionDays(days)
+                    },
+                ) {
+                    Text("Activar y aplicar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRetentionDays = null }) {
+                    Text("Cancelar")
                 }
             },
         )
@@ -214,9 +307,40 @@ fun RecordingScreen(
                 onSelectLabSession = onSelectLabSession,
                 onRequestDelete = { sessionId -> pendingSessionDeletion = sessionId },
             )
+        }
+        if (state.status == SessionStatus.NEW) {
+            Text("Retención local", modifier = Modifier.padding(top = 16.dp))
+            TextButton(
+                enabled = state.preferencesReady && !state.asrRunning &&
+                    !state.sessionDeletionRunning,
+                onClick = { retentionMenuExpanded = true },
+            ) {
+                Text(retentionPolicyLabel(state.retentionDays))
+            }
+            DropdownMenu(
+                expanded = retentionMenuExpanded,
+                onDismissRequest = { retentionMenuExpanded = false },
+            ) {
+                listOf(0, 30, 90, 365).forEach { days ->
+                    DropdownMenuItem(
+                        text = { Text(retentionPolicyLabel(days)) },
+                        onClick = {
+                            retentionMenuExpanded = false
+                            if (days == 0) onSetRetentionDays(days)
+                            else pendingRetentionDays = days
+                        },
+                    )
+                }
+            }
+            if (state.retentionDeletedCount > 0) {
+                Text(
+                    "Retención aplicada: ${state.retentionDeletedCount} sesiones eliminadas.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             state.sessionDeletionError?.let { errorCode ->
                 Text(
-                    "No se pudo eliminar la sesión: $errorCode",
+                    "No se pudo aplicar el borrado o la retención: $errorCode",
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -281,20 +405,30 @@ fun RecordingScreen(
             when (state.status) {
                 SessionStatus.NEW -> {
                     Button(
-                        enabled = state.preferencesReady,
+                        enabled = state.preferencesReady && !state.asrRunning &&
+                            !state.sessionDeletionRunning,
                         onClick = {
-                        onStart(CapturePipeline.DIRECT_16_KHZ, selectedIncrementalModelId)
+                            val request = CapturePipeline.DIRECT_16_KHZ to selectedIncrementalModelId
+                            if (state.consentNoticeAcknowledged) {
+                                onStart(request.first, request.second)
+                            } else {
+                                pendingConsentStart = request
+                            }
                         },
                     ) {
                         Text("Iniciar 16 kHz")
                     }
                     Button(
-                        enabled = state.preferencesReady,
+                        enabled = state.preferencesReady && !state.asrRunning &&
+                            !state.sessionDeletionRunning,
                         onClick = {
-                        onStart(
-                            CapturePipeline.NATIVE_48_KHZ_TO_16_KHZ,
-                            selectedIncrementalModelId,
-                        )
+                            val request = CapturePipeline.NATIVE_48_KHZ_TO_16_KHZ to
+                                selectedIncrementalModelId
+                            if (state.consentNoticeAcknowledged) {
+                                onStart(request.first, request.second)
+                            } else {
+                                pendingConsentStart = request
+                            }
                         },
                     ) {
                         Text("Iniciar 48→16 kHz")
@@ -726,4 +860,9 @@ private fun formatDuration(durationMs: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format(Locale.ROOT, "%02d:%02d", minutes, seconds)
+}
+
+private fun retentionPolicyLabel(days: Int): String = when (days) {
+    0 -> "Conservar siempre"
+    else -> "Conservar $days días"
 }

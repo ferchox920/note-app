@@ -33,6 +33,8 @@ class AppPreferencesDataStoreTest {
         repository.setIncrementalModel("sherpa-es")
         repository.setBenchmarkThreadCount(6)
         repository.setBenchmarkChunkSeconds(20)
+        repository.setRetentionDays(365)
+        repository.acknowledgeConsentNotice(123_456L)
 
         assertEquals(
             AppPreferences(
@@ -40,6 +42,9 @@ class AppPreferencesDataStoreTest {
                 incrementalModelId = "sherpa-es",
                 benchmarkThreadCount = 6,
                 benchmarkChunkSeconds = 20,
+                retentionDays = 365,
+                consentNoticeVersionAcknowledged = 1,
+                consentAcknowledgedAtEpochMs = 123_456L,
             ),
             repository.preferences.first(),
         )

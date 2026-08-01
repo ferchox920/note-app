@@ -14,8 +14,10 @@ import com.noteapp.storage.ProcessingTelemetryStore
 import com.noteapp.storage.RoomProcessingTelemetryStore
 import com.noteapp.storage.RoomSessionDeletionStore
 import com.noteapp.storage.RoomSessionCheckpointStore
+import com.noteapp.storage.RoomSessionRetentionStore
 import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.storage.SessionDeletionStore
+import com.noteapp.storage.SessionRetentionStore
 import com.noteapp.storage.createAppPreferencesRepository
 import com.noteapp.vad.VadComparisonRunner
 import dagger.Module
@@ -95,6 +97,16 @@ object RecordingDependenciesModule {
     ): SessionDeletionStore = RoomSessionDeletionStore(
         recordingsDirectory = File(context.filesDir, "recordings"),
         database = database,
+    )
+
+    @Provides
+    @Singleton
+    fun provideSessionRetentionStore(
+        database: NoteAppDatabase,
+        deletionStore: SessionDeletionStore,
+    ): SessionRetentionStore = RoomSessionRetentionStore(
+        database = database,
+        deletionStore = deletionStore,
     )
 
     @Provides

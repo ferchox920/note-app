@@ -9,4 +9,7 @@ message StoredAppPreferences {
   string incremental_model_id = 3;
   int32 benchmark_thread_count = 4;
   int32 benchmark_chunk_seconds = 5;
+  int32 retention_days = 6;
+  int32 consent_notice_version = 7;
+  int64 consent_acknowledged_at_epoch_ms = 8;
 }
