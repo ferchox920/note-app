@@ -336,6 +336,13 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
   [`protocolo reproducible`](doc/evidence/sprint-4/encrypted-session-artifacts-protocol.md).
 - P0. Implementar recuperación idempotente tras cierre forzado o reinicio.
 - P0. Implementar escrituras atómicas, checksums y limpieza controlada de temporales.
+  **Completado (2026-07-31):** los artefactos cifrados sincronizan, autentican y
+  sustituyen su candidato atómicamente; PCM valida offsets, tamaños y SHA-256;
+  SQLCipher verifica integridad antes de promover; y la recuperación trata de
+  forma idempotente temporales de escritura, migración, backup y tails GCM
+  incompletos. En S25 Ultra se comprobaron 114 artefactos, 24 segmentos y cero
+  temporales o archivos planos, sin grabar ni ejecutar ASR. Véase
+  [`doc/evidence/sprint-4/atomic-storage-2026-07-31.md`](doc/evidence/sprint-4/atomic-storage-2026-07-31.md).
 - P0. Añadir BiometricPrompt opcional para reautenticación.
 - P0. Implementar borrado completo y verificable de una sesión.
 - P1. Añadir retención configurable y advertencia de consentimiento.
