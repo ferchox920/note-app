@@ -18,11 +18,42 @@ object AndroidKeystoreSessionArtifactStore {
     @Synchronized
     fun create(context: Context): SessionArtifactStore {
         val applicationContext = context.applicationContext
-        val root = File(applicationContext.filesDir, "recordings")
+        return create(
+            context = applicationContext,
+            rootDirectory = File(applicationContext.filesDir, "recordings"),
+        )
+    }
+
+    /**
+     * Creates a store for an isolated app-private root while retaining the same
+     * non-exportable key and fail-closed marker used by production artifacts.
+     *
+     * This is used by destructive recovery audits so their fixtures never share
+     * the production recordings directory.
+     */
+    @Synchronized
+    fun create(
+        context: Context,
+        rootDirectory: File,
+    ): SessionArtifactStore {
+        val applicationContext = context.applicationContext
+        val filesDirectory = applicationContext.filesDir.canonicalFile
+        val root = rootDirectory.canonicalFile
+        require(root.path.startsWith("${filesDirectory.path}${File.separator}")) {
+            "ARTIFACT_ROOT_OUTSIDE_APP_PRIVATE_STORAGE"
+        }
+        val productionRoot = File(filesDirectory, "recordings")
         val marker = File(applicationContext.filesDir, "security/$KEY_MARKER_NAME")
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         val existingKey = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
-        if (existingKey == null && (marker.exists() || containsEncryptedArtifact(root))) {
+        if (
+            existingKey == null &&
+            (
+                marker.exists() ||
+                    containsEncryptedArtifact(productionRoot) ||
+                    containsEncryptedArtifact(root)
+                )
+        ) {
             throw SecurityException("ARTIFACT_ENCRYPTION_KEY_MISSING")
         }
         val key = existingKey ?: generateKey()

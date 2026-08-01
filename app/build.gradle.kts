@@ -66,8 +66,12 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(project(":core-audio"))
     debugImplementation(project(":core-security"))
+    androidTestImplementation(project(":core-audio"))
+    androidTestImplementation(project(":core-domain"))
     androidTestImplementation(project(":core-security"))
+    androidTestImplementation(project(":core-storage"))
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.kotlinx.coroutines.core)
 }
