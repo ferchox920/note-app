@@ -25,6 +25,7 @@ data class AppPreferences(
     val retentionDays: Int = RETENTION_FOREVER_DAYS,
     val consentNoticeVersionAcknowledged: Int = 0,
     val consentAcknowledgedAtEpochMs: Long? = null,
+    val biometricReauthenticationEnabled: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_CAPTURE_PIPELINE_ID = "direct-16k"
@@ -83,6 +84,8 @@ interface AppPreferencesStore {
     suspend fun setRetentionDays(days: Int)
 
     suspend fun acknowledgeConsentNotice(atEpochMs: Long)
+
+    suspend fun setBiometricReauthenticationEnabled(enabled: Boolean)
 }
 
 internal class ProtoAppPreferencesRepository(
@@ -138,6 +141,12 @@ internal class ProtoAppPreferencesRepository(
         }
     }
 
+    override suspend fun setBiometricReauthenticationEnabled(enabled: Boolean) {
+        dataStore.updateData { current ->
+            current.toBuilder().setBiometricReauthenticationEnabled(enabled).build()
+        }
+    }
+
     private fun toAppPreferences(stored: StoredAppPreferences): AppPreferences =
         AppPreferences(
             capturePipelineId = stored.capturePipelineId
@@ -165,6 +174,7 @@ internal class ProtoAppPreferencesRepository(
                     stored.consentNoticeVersion == AppPreferences.CURRENT_CONSENT_NOTICE_VERSION &&
                         it > 0L
                 },
+            biometricReauthenticationEnabled = stored.biometricReauthenticationEnabled,
         )
 
     private companion object {

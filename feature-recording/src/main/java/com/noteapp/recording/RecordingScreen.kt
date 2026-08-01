@@ -49,7 +49,11 @@ import com.noteapp.audio.CapturePipeline
 import java.util.Locale
 
 @Composable
-fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
+fun RecordingRoute(
+    biometricMessage: String?,
+    onSetBiometricProtection: (Boolean) -> Unit,
+    viewModel: RecordingViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var permissionDenied by remember { mutableStateOf(false) }
@@ -140,6 +144,8 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
         benchmarkChunkSeconds = state.benchmarkChunkSeconds,
         onSelectBenchmarkChunkSeconds = viewModel::selectBenchmarkChunkSeconds,
         onSetRetentionDays = viewModel::setRetentionDays,
+        biometricMessage = biometricMessage,
+        onSetBiometricProtection = onSetBiometricProtection,
     )
 }
 
@@ -164,6 +170,8 @@ fun RecordingScreen(
     benchmarkChunkSeconds: Int,
     onSelectBenchmarkChunkSeconds: (Int) -> Unit,
     onSetRetentionDays: (Int) -> Unit,
+    biometricMessage: String?,
+    onSetBiometricProtection: (Boolean) -> Unit,
 ) {
     var confirmFinish by remember { mutableStateOf(false) }
     var pendingSessionDeletion by rememberSaveable { mutableStateOf<String?>(null) }
@@ -172,6 +180,7 @@ fun RecordingScreen(
     }
     var retentionMenuExpanded by remember { mutableStateOf(false) }
     var pendingRetentionDays by remember { mutableStateOf<Int?>(null) }
+    var confirmDisableBiometric by remember { mutableStateOf(false) }
     if (confirmFinish && state.status != SessionStatus.RECORDING && state.status != SessionStatus.PAUSED) {
         confirmFinish = false
     }
@@ -248,6 +257,33 @@ fun RecordingScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingRetentionDays = null }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+    if (confirmDisableBiometric) {
+        AlertDialog(
+            onDismissRequest = { confirmDisableBiometric = false },
+            title = { Text("¿Desactivar protección biométrica?") },
+            text = {
+                Text(
+                    "La app dejará de pedir reautenticación al volver desde segundo plano. " +
+                        "El cifrado local de sesiones seguirá activo.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDisableBiometric = false
+                        onSetBiometricProtection(false)
+                    },
+                ) {
+                    Text("Desactivar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisableBiometric = false }) {
                     Text("Cancelar")
                 }
             },
@@ -343,6 +379,38 @@ fun RecordingScreen(
                     "No se pudo aplicar el borrado o la retención: $errorCode",
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+            Text("Protección de acceso", modifier = Modifier.padding(top = 16.dp))
+            Text(
+                if (state.biometricReauthenticationEnabled) {
+                    "La app se bloquea al quedar en segundo plano."
+                } else {
+                    "Opcional: exige biometría fuerte para volver a ver tus sesiones."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                enabled = state.preferencesReady && !state.asrRunning &&
+                    !state.sessionDeletionRunning,
+                onClick = {
+                    if (state.biometricReauthenticationEnabled) {
+                        confirmDisableBiometric = true
+                    } else {
+                        onSetBiometricProtection(true)
+                    }
+                },
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
+                Text(
+                    if (state.biometricReauthenticationEnabled) {
+                        "Desactivar protección biométrica"
+                    } else {
+                        "Activar protección biométrica"
+                    },
+                )
+            }
+            biometricMessage?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall)
             }
         }
         Text("Duración: ${formatDuration(state.durationMs)}")

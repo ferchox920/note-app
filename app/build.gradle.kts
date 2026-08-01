@@ -55,7 +55,9 @@ android {
 
 dependencies {
     implementation(project(":feature-recording"))
+    implementation(project(":core-storage"))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.biometric)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
@@ -63,6 +65,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(project(":core-audio"))
     debugImplementation(project(":core-security"))

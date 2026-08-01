@@ -9,9 +9,17 @@ import com.noteapp.recording.RecordingRoute
 private const val RECORDING_ROUTE = "recording"
 
 @Composable
-fun NoteAppNavHost() {
+fun NoteAppNavHost(
+    biometricMessage: String?,
+    onSetBiometricProtection: (Boolean) -> Unit,
+) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = RECORDING_ROUTE) {
-        composable(RECORDING_ROUTE) { RecordingRoute() }
+        composable(RECORDING_ROUTE) {
+            RecordingRoute(
+                biometricMessage = biometricMessage,
+                onSetBiometricProtection = onSetBiometricProtection,
+            )
+        }
     }
 }

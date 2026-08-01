@@ -12,4 +12,5 @@ message StoredAppPreferences {
   int32 retention_days = 6;
   int32 consent_notice_version = 7;
   int64 consent_acknowledged_at_epoch_ms = 8;
+  bool biometric_reauthentication_enabled = 9;
 }

@@ -103,6 +103,7 @@ data class RecordingUiState(
     val retentionDays: Int = AppPreferences.RETENTION_FOREVER_DAYS,
     val consentNoticeAcknowledged: Boolean = false,
     val retentionDeletedCount: Int = 0,
+    val biometricReauthenticationEnabled: Boolean = false,
 )
 
 @HiltViewModel
@@ -214,6 +215,7 @@ class RecordingViewModel @Inject constructor(
                     preferences.consentNoticeVersionAcknowledged ==
                     AppPreferences.CURRENT_CONSENT_NOTICE_VERSION,
                 retentionDeletedCount = asr.retentionDeletedCount,
+                biometricReauthenticationEnabled = preferences.biometricReauthenticationEnabled,
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordingUiState())

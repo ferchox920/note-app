@@ -35,6 +35,7 @@ class AppPreferencesDataStoreTest {
         repository.setBenchmarkChunkSeconds(20)
         repository.setRetentionDays(365)
         repository.acknowledgeConsentNotice(123_456L)
+        repository.setBiometricReauthenticationEnabled(true)
 
         assertEquals(
             AppPreferences(
@@ -45,6 +46,7 @@ class AppPreferencesDataStoreTest {
                 retentionDays = 365,
                 consentNoticeVersionAcknowledged = 1,
                 consentAcknowledgedAtEpochMs = 123_456L,
+                biometricReauthenticationEnabled = true,
             ),
             repository.preferences.first(),
         )

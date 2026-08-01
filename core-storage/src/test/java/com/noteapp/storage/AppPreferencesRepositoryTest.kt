@@ -31,6 +31,7 @@ class AppPreferencesRepositoryTest {
         repository.setBenchmarkChunkSeconds(20)
         repository.setRetentionDays(90)
         repository.acknowledgeConsentNotice(123_456L)
+        repository.setBiometricReauthenticationEnabled(true)
 
         assertEquals(
             AppPreferences(
@@ -41,12 +42,15 @@ class AppPreferencesRepositoryTest {
                 retentionDays = 90,
                 consentNoticeVersionAcknowledged = 1,
                 consentAcknowledgedAtEpochMs = 123_456L,
+                biometricReauthenticationEnabled = true,
             ),
             repository.preferences.first(),
         )
 
         repository.setIncrementalModel(null)
         assertNull(repository.preferences.first().incrementalModelId)
+        repository.setBiometricReauthenticationEnabled(false)
+        assertEquals(false, repository.preferences.first().biometricReauthenticationEnabled)
     }
 
     @Test
