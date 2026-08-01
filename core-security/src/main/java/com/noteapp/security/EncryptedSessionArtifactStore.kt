@@ -16,7 +16,6 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
-import java.security.SecureRandom
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
@@ -25,7 +24,6 @@ import javax.crypto.spec.GCMParameterSpec
 class EncryptedSessionArtifactStore(
     private val rootDirectory: File,
     private val encryptionKey: SecretKey,
-    private val secureRandom: SecureRandom = SecureRandom(),
 ) : SessionArtifactStore {
     override fun isEncrypted(file: File): Boolean {
         if (!file.isFile || file.length() < MAGIC.size) return false
@@ -346,9 +344,13 @@ class EncryptedSessionArtifactStore(
         length: Int,
     ) {
         require(length in 1..MAX_FRAME_BYTES) { "ARTIFACT_FRAME_SIZE_INVALID" }
-        val iv = ByteArray(GCM_IV_BYTES).also(secureRandom::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+        // Android Keystore keys with randomized encryption enabled reject caller-provided
+        // IVs. Let the key provider generate a fresh IV for every frame and persist it
+        // alongside the ciphertext for authenticated decryption.
+        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey)
+        val iv = cipher.iv
+        check(iv.size == GCM_IV_BYTES) { "ARTIFACT_IV_SIZE_INVALID" }
         cipher.updateAAD(frameAad(header, sequence, length))
         val encrypted = cipher.doFinal(buffer, offset, length)
         output.writeInt(length)

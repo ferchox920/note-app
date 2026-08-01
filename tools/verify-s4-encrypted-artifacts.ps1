@@ -9,7 +9,7 @@ $packageName = "com.noteapp"
 $testPackageName = "com.noteapp.test"
 $runner = "$testPackageName/androidx.test.runner.AndroidJUnitRunner"
 $testClass = "com.noteapp.SessionArtifactIntegrityInstrumentedTest"
-$encryptedMagicHex = "4e41415254463031"
+$encryptedMagic = "NAARTF01"
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectDirectory = Split-Path -Parent $scriptDirectory
 $appApk = Join-Path $projectDirectory "app\build\outputs\apk\debug\app-debug.apk"
@@ -56,10 +56,9 @@ function Get-ArtifactInventory {
             $temporaryCount += 1
         }
         $header = Invoke-AdbText -CommandArguments @(
-            "shell", "run-as", $packageName, "sh", "-c",
-            "head -c 8 '$path' | od -An -tx1 | tr -d ' \n'"
+            "exec-out", "run-as", $packageName, "head", "-c", "8", $path
         )
-        if ($header -eq $encryptedMagicHex) {
+        if ($header -eq $encryptedMagic) {
             $encryptedCount += 1
         }
         $size = Invoke-AdbText -CommandArguments @(
