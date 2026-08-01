@@ -103,6 +103,7 @@ fun RecordingRoute(viewModel: RecordingViewModel = hiltViewModel()) {
             viewModel.transcribeStreaming()
         },
         onSelectLabSession = viewModel::selectLabSession,
+        onDeleteCompletedSession = viewModel::deleteCompletedSession,
         onRecoverSession = viewModel::recoverSession,
         onCompareVad = viewModel::compareVad,
         selectedIncrementalModelId = state.selectedIncrementalModelId,
@@ -124,6 +125,7 @@ fun RecordingScreen(
     onTranscribe: (WhisperModelDescriptor) -> Unit,
     onTranscribeStreaming: () -> Unit,
     onSelectLabSession: (String) -> Unit,
+    onDeleteCompletedSession: (String) -> Unit,
     onRecoverSession: (String) -> Unit,
     onCompareVad: () -> Unit,
     selectedIncrementalModelId: String?,
@@ -134,6 +136,7 @@ fun RecordingScreen(
     onSelectBenchmarkChunkSeconds: (Int) -> Unit,
 ) {
     var confirmFinish by remember { mutableStateOf(false) }
+    var pendingSessionDeletion by rememberSaveable { mutableStateOf<String?>(null) }
     if (confirmFinish && state.status != SessionStatus.RECORDING && state.status != SessionStatus.PAUSED) {
         confirmFinish = false
     }
@@ -153,6 +156,37 @@ fun RecordingScreen(
             dismissButton = {
                 TextButton(onClick = { confirmFinish = false }) {
                     Text("Continuar grabando")
+                }
+            },
+        )
+    }
+    val deletionSession = pendingSessionDeletion?.let { sessionId ->
+        state.completedSessions.firstOrNull { session -> session.id == sessionId }
+    }
+    deletionSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = { pendingSessionDeletion = null },
+            title = { Text("¿Eliminar esta sesión?") },
+            text = {
+                Text(
+                    "Se eliminarán permanentemente el audio, la transcripción, " +
+                        "las notas, los trabajos y las métricas de ${session.id.take(8)}.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.sessionDeletionRunning,
+                    onClick = {
+                        pendingSessionDeletion = null
+                        onDeleteCompletedSession(session.id)
+                    },
+                ) {
+                    Text("Eliminar definitivamente")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSessionDeletion = null }) {
+                    Text("Cancelar")
                 }
             },
         )
@@ -178,7 +212,14 @@ fun RecordingScreen(
             CompletedSessionSelector(
                 state = state,
                 onSelectLabSession = onSelectLabSession,
+                onRequestDelete = { sessionId -> pendingSessionDeletion = sessionId },
             )
+            state.sessionDeletionError?.let { errorCode ->
+                Text(
+                    "No se pudo eliminar la sesión: $errorCode",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
         Text("Duración: ${formatDuration(state.durationMs)}")
         Text("PCM escrito: ${state.bytesWritten} bytes")
@@ -489,6 +530,7 @@ fun RecordingScreen(
 private fun CompletedSessionSelector(
     state: RecordingUiState,
     onSelectLabSession: (String) -> Unit,
+    onRequestDelete: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = state.completedSessions.firstOrNull { it.id == state.labSessionId }
@@ -522,6 +564,15 @@ private fun CompletedSessionSelector(
                 },
             )
         }
+    }
+    OutlinedButton(
+        enabled = !state.asrRunning && !state.sessionDeletionRunning,
+        onClick = { onRequestDelete(selected.id) },
+        modifier = Modifier.semantics {
+            contentDescription = "Eliminar sesión seleccionada"
+        },
+    ) {
+        Text(if (state.sessionDeletionRunning) "Eliminando…" else "Eliminar sesión")
     }
 }
 

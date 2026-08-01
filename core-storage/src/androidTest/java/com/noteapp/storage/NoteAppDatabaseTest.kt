@@ -7,8 +7,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -111,6 +113,63 @@ class NoteAppDatabaseTest {
             emptyList<SessionMetricEntity>(),
             database.sessionMetricDao().findBySession("session-1"),
         )
+    }
+
+    @Test
+    fun sessionDeletionRemovesFilesAndEveryDatabaseCascadeIdempotently() = runBlocking {
+        val root = temporaryFolder.newFolder("delete-recordings")
+        val sessionDirectory = root.resolve("session-delete").apply {
+            assertTrue(mkdir())
+            resolve("checkpoint.json").writeText("fixture")
+            resolve("nested").apply { assertTrue(mkdir()) }.resolve("artifact.bin")
+                .writeBytes(byteArrayOf(1, 2, 3))
+        }
+        insertSessionGraph("session-delete")
+        val store = RoomSessionDeletionStore(root, database)
+
+        store.delete("session-delete")
+
+        assertFalse(sessionDirectory.exists())
+        assertFalse(root.resolve(".deleting-session-delete").exists())
+        assertSessionGraphDeleted("session-delete")
+        store.delete("session-delete")
+        assertSessionGraphDeleted("session-delete")
+    }
+
+    @Test
+    fun interruptedSessionDeletionIsRecoveredFromTombstone() = runBlocking {
+        val root = temporaryFolder.newFolder("recover-delete-recordings")
+        root.resolve(".deleting-session-delete").apply {
+            assertTrue(mkdir())
+            resolve("checkpoint.json").writeText("fixture")
+        }
+        insertSessionGraph("session-delete")
+        val store = RoomSessionDeletionStore(root, database)
+
+        assertEquals(1, store.recoverInterrupted())
+
+        assertFalse(root.resolve(".deleting-session-delete").exists())
+        assertSessionGraphDeleted("session-delete")
+        assertEquals(0, store.recoverInterrupted())
+    }
+
+    @Test
+    fun activeSessionDeletionIsRefusedWithoutChangingFilesOrDatabase() = runBlocking {
+        val root = temporaryFolder.newFolder("active-delete-recordings")
+        val sessionDirectory = root.resolve("active-session").apply {
+            assertTrue(mkdir())
+            resolve("checkpoint.json").writeText("fixture")
+        }
+        database.sessionDao().upsert(session("active-session").copy(status = "RECORDING"))
+        val store = RoomSessionDeletionStore(root, database)
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            runBlocking { store.delete("active-session") }
+        }
+
+        assertEquals("ACTIVE_SESSION_DELETE_REFUSED", failure.message)
+        assertTrue(sessionDirectory.isDirectory)
+        assertEquals("RECORDING", database.sessionDao().findById("active-session")?.status)
     }
 
     @Test
@@ -303,6 +362,69 @@ class NoteAppDatabaseTest {
         durationMs = 5_000,
         updatedAtEpochMs = 2,
     )
+
+    private suspend fun insertSessionGraph(sessionId: String) {
+        database.sessionDao().upsert(session(sessionId))
+        database.transcriptSegmentDao().upsertAll(
+            listOf(
+                TranscriptSegmentEntity(
+                    sessionId = sessionId,
+                    sequence = 0,
+                    startMs = 0,
+                    endMs = 1_000,
+                    text = "fixture",
+                    sourceModel = "test",
+                ),
+            ),
+        )
+        database.noteDao().upsert(
+            NoteEntity(
+                id = "note-$sessionId",
+                sessionId = sessionId,
+                templateId = null,
+                schemaVersion = 1,
+                contentMarkdown = "fixture",
+                contentJson = null,
+                generatedAtEpochMs = 1,
+                editedAtEpochMs = null,
+                generationModel = null,
+            ),
+        )
+        database.processingJobDao().upsert(
+            ProcessingJobEntity(
+                id = "job-$sessionId",
+                sessionId = sessionId,
+                jobType = "WHISPER_ASR_POST_PROCESS",
+                state = "COMPLETED",
+                startedAtEpochMs = 1,
+                endedAtEpochMs = 2,
+                errorCode = null,
+                attempts = 1,
+            ),
+        )
+        database.sessionMetricDao().insertAll(
+            listOf(
+                SessionMetricEntity(
+                    sessionId = sessionId,
+                    observedAtEpochMs = 2,
+                    metricName = "REAL_TIME_FACTOR",
+                    value = 0.1,
+                    unit = "ratio",
+                    phase = "post_process",
+                    runtime = "test",
+                    delegate = "cpu",
+                ),
+            ),
+        )
+    }
+
+    private suspend fun assertSessionGraphDeleted(sessionId: String) {
+        assertNull(database.sessionDao().findById(sessionId))
+        assertTrue(database.transcriptSegmentDao().findBySession(sessionId).isEmpty())
+        assertTrue(database.noteDao().findBySession(sessionId).isEmpty())
+        assertTrue(database.processingJobDao().findBySession(sessionId).isEmpty())
+        assertTrue(database.sessionMetricDao().findBySession(sessionId).isEmpty())
+    }
 
     private fun segment(sequence: Int, text: String) = TranscriptSegmentEntity(
         sessionId = "session-1",

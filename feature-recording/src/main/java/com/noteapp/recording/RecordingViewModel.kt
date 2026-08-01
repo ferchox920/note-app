@@ -14,6 +14,7 @@ import com.noteapp.storage.SessionCheckpointStore
 import com.noteapp.storage.AppPreferences
 import com.noteapp.storage.AppPreferencesStore
 import com.noteapp.storage.ProcessingTelemetryStore
+import com.noteapp.storage.SessionDeletionStore
 import com.noteapp.security.SessionArtifactStore
 import com.noteapp.asr.AsrLabRunner
 import com.noteapp.asr.AsrLabResult
@@ -64,6 +65,8 @@ data class RecordingUiState(
     val asrResult: AsrLabResult? = null,
     val streamingAsrResult: SherpaStreamingLabResult? = null,
     val asrError: String? = null,
+    val sessionDeletionRunning: Boolean = false,
+    val sessionDeletionError: String? = null,
     val recoverableSessions: List<RecordingSession> = emptyList(),
     val completedSessions: List<RecordingSession> = emptyList(),
     val labSessionId: String? = null,
@@ -105,6 +108,7 @@ class RecordingViewModel @Inject constructor(
     private val sessionArtifactStore: SessionArtifactStore,
     private val appPreferencesStore: AppPreferencesStore,
     private val processingTelemetryStore: ProcessingTelemetryStore,
+    private val sessionDeletionStore: SessionDeletionStore,
     private val asrLabRunner: AsrLabRunner,
     private val sherpaStreamingLabRunner: SherpaStreamingLabRunner,
     private val vadComparisonRunner: VadComparisonRunner,
@@ -147,6 +151,8 @@ class RecordingViewModel @Inject constructor(
                 asrResult = asr.result,
                 streamingAsrResult = asr.streamingResult,
                 asrError = asr.error,
+                sessionDeletionRunning = asr.sessionDeletionRunning,
+                sessionDeletionError = asr.sessionDeletionError,
                 recoverableSessions = asr.recoverableSessions,
                 completedSessions = asr.completedSessions,
                 labSessionId = runtime.sessionId.takeIf { runtime.status == SessionStatus.COMPLETED }
@@ -387,6 +393,51 @@ class RecordingViewModel @Inject constructor(
         loadIncrementalTranscript(sessionId)
     }
 
+    fun deleteCompletedSession(sessionId: String) {
+        val initial = asrState.value
+        check(!initial.running) { "ASR_RUNNING_DELETE_REFUSED" }
+        check(!initial.sessionDeletionRunning) { "SESSION_DELETE_ALREADY_RUNNING" }
+        check(initial.completedSessions.any { session -> session.id == sessionId }) {
+            "COMPLETED_SESSION_NOT_FOUND"
+        }
+        asrState.value = initial.copy(
+            sessionDeletionRunning = true,
+            sessionDeletionError = null,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                sessionDeletionStore.delete(sessionId)
+            }.onSuccess {
+                val current = asrState.value
+                val remaining = current.completedSessions.filterNot { session ->
+                    session.id == sessionId
+                }
+                val deletedSelected = current.selectedLabSessionId == sessionId
+                val nextSelected = if (deletedSelected) remaining.firstOrNull()?.id
+                else current.selectedLabSessionId
+                asrState.value = current.copy(
+                    completedSessions = remaining,
+                    selectedLabSessionId = nextSelected,
+                    selectedIncrementalTranscript = if (deletedSelected) null
+                    else current.selectedIncrementalTranscript,
+                    selectedIncrementalError = if (deletedSelected) null
+                    else current.selectedIncrementalError,
+                    result = if (deletedSelected) null else current.result,
+                    streamingResult = if (deletedSelected) null else current.streamingResult,
+                    error = if (deletedSelected) null else current.error,
+                    sessionDeletionRunning = false,
+                    sessionDeletionError = null,
+                )
+                if (deletedSelected) nextSelected?.let(::loadIncrementalTranscript)
+            }.onFailure { failure ->
+                asrState.value = asrState.value.copy(
+                    sessionDeletionRunning = false,
+                    sessionDeletionError = failure.safeErrorCode("SESSION_DELETE_FAILED"),
+                )
+            }
+        }
+    }
+
     private fun loadIncrementalTranscript(sessionId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val loaded = runCatching {
@@ -449,6 +500,7 @@ class RecordingViewModel @Inject constructor(
     private fun initializePersistedState() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
+                sessionDeletionStore.recoverInterrupted()
                 sessionArtifactStore.migrateAll()
                 processingTelemetryStore.recoverInterrupted()
                 val recoverable = checkpointStore.findRecoverable()
@@ -480,6 +532,8 @@ class RecordingViewModel @Inject constructor(
         val result: AsrLabResult? = null,
         val streamingResult: SherpaStreamingLabResult? = null,
         val error: String? = null,
+        val sessionDeletionRunning: Boolean = false,
+        val sessionDeletionError: String? = null,
         val recoverableSessions: List<RecordingSession> = emptyList(),
         val completedSessions: List<RecordingSession> = emptyList(),
         val selectedLabSessionId: String? = null,
