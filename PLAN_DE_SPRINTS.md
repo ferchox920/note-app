@@ -345,6 +345,13 @@ y [`doc/adr/ADR-004-sherpa-streaming-experiment.md`](doc/adr/ADR-004-sherpa-stre
   [`doc/evidence/sprint-4/atomic-storage-2026-07-31.md`](doc/evidence/sprint-4/atomic-storage-2026-07-31.md).
 - P0. Añadir BiometricPrompt opcional para reautenticación.
 - P0. Implementar borrado completo y verificable de una sesión.
+  **Completado (2026-07-31):** las sesiones terminales requieren confirmación y
+  se eliminan mediante rename atómico a tombstone, cascadas transaccionales e
+  inspección final de archivos y relaciones. La recuperación de una
+  interrupción es idempotente y una sesión activa falla cerrada. Once pruebas
+  aisladas aprobaron dos veces en S25 Ultra; una auditoría posterior preservó
+  intactas las 14 sesiones reales, sin grabar, transcribir ni borrar. Véase
+  [`doc/evidence/sprint-4/verifiable-session-deletion-2026-07-31.md`](doc/evidence/sprint-4/verifiable-session-deletion-2026-07-31.md).
 - P1. Añadir retención configurable y advertencia de consentimiento.
 
 **Criterios de aceptación**
